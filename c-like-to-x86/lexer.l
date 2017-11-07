@@ -9,6 +9,13 @@
 #include "parser.tab.h"
 
 #define YY_DECL int yylex()
+#define YY_USER_ACTION									\
+	yylloc.first_line = yylloc.last_line = yylineno;	\
+    yylloc.first_column = yycolumn;						\
+	yylloc.last_column = yycolumn + yyleng - 1;			\
+    yycolumn += yyleng;
+
+int yycolumn = 1;
 
 %}
 

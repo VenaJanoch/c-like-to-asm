@@ -148,13 +148,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="compiler.h" />
+    <ClInclude Include="Compiler.h" />
+    <ClInclude Include="CompilerException.h" />
     <ClInclude Include="parser.tab.h" />
     <ClInclude Include="SymbolTableEntry.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="compiler.cpp" />
+    <ClCompile Include="Compiler.cpp" />
     <ClCompile Include="lexer.flex.cpp" />
     <ClCompile Include="parser.tab.cpp" />
   </ItemGroup>

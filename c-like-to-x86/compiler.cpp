@@ -1,9 +1,9 @@
-#include "compiler.h"
+#include "Compiler.h"
 
-#include <cstdio>
-#include <cstdlib>
+#include <stdlib.h>
 #include <string.h>
-#include <iostream>
+#include <malloc.h>
+#include <string>
 
 // Internal Bison functions and variables
 extern int yylex();
@@ -46,10 +46,4 @@ int Compiler::OnRun(int argc, wchar_t* argv[])
     }
 
     return EXIT_SUCCESS;
-}
-
-void Compiler::OnError(const char* s)
-{
-    fprintf(stderr, "Parse error: %s\n", s);
-    exit(EXIT_FAILURE);
 }
