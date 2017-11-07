@@ -150,6 +150,7 @@
   <ItemGroup>
     <ClInclude Include="compiler.h" />
     <ClInclude Include="parser.tab.h" />
+    <ClInclude Include="SymbolTableEntry.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
