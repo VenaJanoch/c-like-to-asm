@@ -57,6 +57,16 @@ public:
 
     int OnRun(int argc, wchar_t *argv[]);
 
+	bool CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type);
+
+	SymbolType GetLargestTypeForArithmetic(SymbolType a, SymbolType b);
+
+
 private:
+	const char* SymbolTypeToString(SymbolType type);
+	const char* ReturnSymbolTypeToString(ReturnSymbolType type);
+	const char* ExpressionTypeToString(ExpressionType type);
+
+	int32_t GetSymbolTypeSize(SymbolType type);
 
 };

@@ -33,3 +33,11 @@ enum struct ReturnSymbolType {
     Uint32,
     String,
 };
+
+enum struct ExpressionType {
+	None,
+
+	Constant,
+	Variable,
+};
+
