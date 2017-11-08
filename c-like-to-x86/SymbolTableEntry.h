@@ -41,3 +41,13 @@ enum struct ExpressionType {
 	Variable,
 };
 
+struct SymbolTableEntry {
+    char* name;
+    SymbolType type;
+    ReturnSymbolType return_type;
+    ExpressionType expression_type;
+    int32_t ip, offset_or_size, parameter;
+    char* parent;
+
+    SymbolTableEntry* next;
+};

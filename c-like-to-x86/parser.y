@@ -21,27 +21,59 @@ Compiler compiler;
 %define parse.error verbose
 
 %token CONST STATIC VOID BOOL UINT8 UINT16 UINT32 STRING CONSTANT IDENTIFIER
-%token IF ELSE RETURN DO WHILE FOR
-%token EQUAL NOT_EQUAL GREATER_OR_EQUAL LESS_OR_EQUAL
-%token SHIFT_LEFT SHIFT_RIGHT
-%token LOG_AND LOG_OR
+%token IF ELSE RETURN DO WHILE FOR GOTO
+%token INC_OP DEC_OP U_PLUS U_MINUS  
+%token EQUAL NOT_EQUAL GREATER_OR_EQUAL LESS_OR_EQUAL SHIFT_LEFT SHIFT_RIGHT LOG_AND LOG_OR
 
 %right '='
-%left EQUAL NOT_EQUAL LESS_OR_EQUAL GREATER_OR_EQUAL '<' '>'
+%left LOG_OR    
+%left LOG_AND
+%left '<' '>' LESS_OR_EQUAL GREATER_OR_EQUAL
+%left EQUAL NOT_EQUAL
 %left SHIFT_LEFT SHIFT_RIGHT
-%left LOG_AND LOG_OR
-%left '+' '-' '*' '/' '%'
+%left '+' '-'
+%left '*' '/' '%'
+%right U_PLUS U_MINUS '!'
+%left INC_OP DEC_OP
 
 %union
 {
     char* string;
+    int32_t integer;
     SymbolType type;
 	ReturnSymbolType return_type;
+
+	struct {
+		char* value;
+		SymbolType type;
+		ExpressionType expression_type;
+
+		BackpatchList* true_list;
+		BackpatchList* false_list;
+	} expression;
+
+	struct {
+		BackpatchList* next_list;
+	} statement;
+
+	struct {
+	    SymbolTableEntry* list;
+		int32_t count;
+	} call_parameters;
+
+	struct {
+		int32_t ip;
+		BackpatchList* next_list;
+	} marker;
 }
 
 %type <string> id IDENTIFIER
 %type <type> declaration_type declaration static_declaration
 %type <return_type> return_type
+%type <expression> expression assignment_with_declaration assignment CONSTANT
+%type <statement> statement statement_list matched_statement unmatched_statement program function_body function
+%type <call_parameters> call_parameter_list
+%type <marker> marker jump_marker
 
 %start program_head
 
@@ -71,12 +103,20 @@ program
 function
     : return_type id '(' parameter_list ')' ';'
         {
+			c.AddFunctionPrototype($2, $1);
+
+			// Nothing to backpatch here...
+            $$.next_list = nullptr;
         }
     | return_type id '(' parameter_list ')' function_body
         {
+			c.AddFunction($2, $1);
+            $$.next_list = $6.next_list;
         }
 	| static_declaration_list
 		{
+			// Nothing to backpatch here...
+			$$.next_list = nullptr;
 		}
     ;
 
@@ -84,16 +124,21 @@ function_body
     : '{' statement_list  '}'
         {
             Log("P: Found function body");
+
+			$$.next_list = $2.next_list;
         }
     ;
 
 parameter_list
     : declaration_type id
         {
+			c.ToParameterList($1, $2);
+
             Log("P: Found parameter");
         }
     | parameter_list ',' declaration_type id
         {
+			c.ToParameterList($3, $4);
 
             Log("P: Found parameter list (end)");
         }
@@ -186,10 +231,15 @@ statement_list
     : statement
         {
 			Log("P: Processing single statement in list statement list");
+
+			$$.next_list = $1.next_list;
         }
     | statement_list marker statement
         {
 			Log("P: Processing statement list");
+
+			c.BackpatchStream($1.next_list, $2.ip);
+			$$.next_list = $3.next_list;
         }
     ;
 
@@ -197,18 +247,28 @@ statement
     : matched_statement
         {
 			Log("P: Processing matched statement");
+
+			$$.next_list = $1.next_list;
         }
     | unmatched_statement
         {
 			Log("P: Processing unmatched statement");
+
+			$$.next_list = $1.next_list;
         }
 	| declaration_list
 		{
 			Log("P: Processing declaration list");
+
+			// Nothing to backpatch here...
+			$$.next_list = nullptr;
 		}
 	| goto_label
 		{
 			Log("P: Processing goto label");
+
+			// Nothing to backpatch here...
+			$$.next_list = nullptr;
 		}
     ;
 
@@ -584,6 +644,8 @@ expression
     | '(' expression ')'
         {
             Log("P: Processing expression in parentheses");
+
+			$$ = $2;
         }
     | id '(' call_parameter_list ')'
         {
@@ -596,6 +658,10 @@ expression
     | id
         {
 			Log("P: Processing identifier");
+
+			$$.value = $1;
+			$$.type = param->type;
+			$$.expression_type = ExpressionType::Variable;
         }
     ;
 
@@ -605,12 +671,18 @@ call_parameter_list
 			Log("P: Processing call parameter list");
 
 			CheckTypeIsValid($1.type, @1);
+
+			$$.list = c.ToCallParameterList(nullptr, $1.type, $1.value, $1.expression_type);
+			$$.count = 1;
         }
     | call_parameter_list ',' expression
         {
 			Log("P: Processing call parameter list");
 
 			CheckTypeIsValid($3.type, @3);
+
+			$$.list = c.ToCallParameterList($1.list, $3.type, $3.value, $3.expression_type);
+			$$.count = $1.count + 1;
         }
     ;
 
@@ -620,6 +692,8 @@ goto_label
 	: id ':'
 		{
 			Log("P: Found goto label \"" << $1 << "\"");
+
+			c.AddLabel($1, $3.ip);
 		}
 	;
 
