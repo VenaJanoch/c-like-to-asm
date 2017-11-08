@@ -306,11 +306,15 @@ declaration_list
 declaration
     : declaration_type id
         {
+            $$ = $1;
+            c.ToDeclarationList($1, $2, ExpressionType::Variable);
+
             Log("P: Found variable declaration");
         }
     | declaration ',' id
         {
 			CheckTypeIsValid($1, @1);
+            c.ToDeclarationList($1, $3, ExpressionType::Variable);
 
             Log("P: Found multiple declarations");
         }
@@ -327,11 +331,15 @@ static_declaration_list
 static_declaration
     : STATIC declaration_type id
         {
+            $$ = $2;
+			c.AddStaticVariable($2, $3);
+
             Log("P: Found static variable declaration");
         }
     | STATIC static_declaration ',' id
         {
 			CheckTypeIsValid($2, @2);
+			c.AddStaticVariable($2, $4);
 
             Log("P: Found multiple static declarations");
         }
@@ -342,10 +350,50 @@ assignment
     : expression
         {
             Log("P: Found expression as assignment " << $1.value);
+
+            $$ = $1;
         }
     | id '=' expression
 		{
 			Log("P: Found assignment");
+
+            SymbolTableEntry* decl = c.GetParameter($1);
+        	if (!decl) {
+				std::string message = "Variable \"";
+				message += $1;
+				message += "\" is not declared in scope";
+				throw CompilerException(CompilerExceptionSource::Statement,
+					message, @1.first_line, @1.first_column);
+        	}
+
+			if (decl->expression_type == ExpressionType::Constant) {
+				std::string message = "Variable \"";
+				message += $1;
+				message += "\" is read-only";
+				throw CompilerException(CompilerExceptionSource::Statement,
+					message, @3.first_line, @3.first_column);
+        	}
+
+			if (!c.CanImplicitCast(decl->type, $3.type, $3.expression_type)) {
+				std::string message = "Cannot assign to variable \"";
+				message += $1;
+				message += "\" because of type mismatch";
+				throw CompilerException(CompilerExceptionSource::Statement,
+					message, @3.first_line, @3.first_column);
+            }
+
+            sprintf_s(output_buffer, "%s = %s", $1, $3.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			i->assignment.type = AssignType::None;
+			i->assignment.dst_value = decl->name;
+			i->assignment.op1_value = $3.value;
+			i->assignment.op1_type = $3.type;
+			i->assignment.op1_exp_type = $3.expression_type;
+
+            $$.type = decl->type;
+            $$.true_list = $3.true_list;
+            $$.expression_type = ExpressionType::Variable;
+            $$.value = $1;
         }
     ;
 
@@ -354,17 +402,72 @@ assignment_with_declaration
     : assignment
         {
             Log("P: Found assignment without declaration \"" << $1.value << "\"");
+
+            $$ = $1;
         }
 	| CONST declaration_type id '=' expression
 		{
 			Log("P: Found const. variable declaration with assignment \"" << $3 << "\"");
+
+			if ($5.expression_type != ExpressionType::Constant) {
+				std::string message = "Cannot assign non-constant value to variable \"";
+				message += $3;
+				message += "\"";
+				throw CompilerException(CompilerExceptionSource::Statement,
+					message, @5.first_line, @5.first_column);
+			}
+
+			if (!c.CanImplicitCast($2, $5.type, $5.expression_type)) {
+				std::string message = "Cannot assign to variable \"";
+				message += $3;
+				message += "\" because of type mismatch";
+				throw CompilerException(CompilerExceptionSource::Statement,
+					message, @5.first_line, @5.first_column);
+            }
+
+            SymbolTableEntry* decl = c.ToDeclarationList($2, $3, ExpressionType::Constant);
+
+            sprintf_s(output_buffer, "%s = %s", $3, $5.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			i->assignment.type = AssignType::None;
+			i->assignment.dst_value = decl->name;
+			i->assignment.op1_value = $5.value;
+			i->assignment.op1_type = $5.type;
+			i->assignment.op1_exp_type = $5.expression_type;
+
+            $$.type = $2;
+            $$.true_list = $5.true_list;
+            $$.expression_type = ExpressionType::Constant;
+            $$.value = $3;
         }
 	| declaration_type id '=' expression
 		{
 			Log("P: Found variable declaration with assignment \"" << $2 << "\"");
+
+			if (!c.CanImplicitCast($1, $4.type, $4.expression_type)) {
+				std::string message = "Cannot assign to variable \"";
+				message += $2;
+				message += "\" because of type mismatch";
+				throw CompilerException(CompilerExceptionSource::Statement,
+					message, @4.first_line, @4.first_column);
+            }
+
+            SymbolTableEntry* decl = c.ToDeclarationList($1, $2, ExpressionType::None);
+
+            sprintf_s(output_buffer, "%s = %s", $2, $4.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			i->assignment.type = AssignType::None;
+			i->assignment.dst_value = decl->name;
+			i->assignment.op1_value = $4.value;
+			i->assignment.op1_type = $4.type;
+			i->assignment.op1_exp_type = $4.expression_type;
+
+            $$.type = $1;
+            $$.true_list = $4.true_list;
+            $$.expression_type = ExpressionType::Variable;
+            $$.value = $2;
         }
     ;
-
 expression
     : INC_OP expression
         {
