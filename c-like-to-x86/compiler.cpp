@@ -48,6 +48,60 @@ int Compiler::OnRun(int argc, wchar_t* argv[])
     return EXIT_SUCCESS;
 }
 
+InstructionEntry* Compiler::AddToStream(InstructionType type, char* code)
+{
+    Log(":: " << code);
+
+    InstructionEntry* entry = new InstructionEntry();
+    entry->content = _strdup(code);
+    entry->goto_ip = -1;
+    entry->type = type;
+
+    if (instruction_stream_head) {
+        instruction_stream_tail->next = entry;
+        instruction_stream_tail = entry;
+    } else {
+        instruction_stream_head = entry;
+        instruction_stream_tail = entry;
+    }
+
+    // Advance abstract instruction pointer
+    current_ip++;
+
+    return entry;
+}
+
+BackpatchList* Compiler::AddToStreamWithBackpatch(InstructionType type, char* code)
+{
+    InstructionEntry* entry = AddToStream(type, code);
+
+    BackpatchList* backpatch = new BackpatchList();
+    backpatch->entry = entry;
+    return backpatch;
+}
+
+void Compiler::BackpatchStream(BackpatchList* list, int32_t new_ip)
+{
+    while (list) {
+        if (list->entry) {
+            // Apply new abstract instruction pointer value
+            if (list->entry->type == InstructionType::Goto) {
+                list->entry->goto_statement.goto_ip = new_ip;
+            } else if (list->entry->type == InstructionType::If) {
+                list->entry->if_statement.goto_ip = new_ip;
+            } else {
+                // This type cannot be backpatched...
+                Log("Trying to backpatch unsupported instruction");
+            }
+        }
+
+        // Release entry in backpatch linked list
+        BackpatchList* current = list;
+        list = list->next;
+        delete current;
+    }
+}
+
 bool Compiler::CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type)
 {
 	if (from == to) {

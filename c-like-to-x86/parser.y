@@ -273,7 +273,7 @@ statement
     ;
 
 matched_statement
-    : IF '(' assignment ')' matched_statement ELSE matched_statement
+    : IF '(' assignment ')' marker matched_statement jump_marker ELSE marker matched_statement
         {
 			Log("P: Processing matched if..else");
 
@@ -291,19 +291,19 @@ matched_statement
         {
 			Log("P: Processing value return");
         }
-    | WHILE '(' assignment ')' matched_statement
+    | WHILE marker '(' assignment ')' marker matched_statement jump_marker
         {
 			Log("P: Processing matched while");
 
 			CheckIsIntOrBool($4, "Only integer and bool types are allowed in \"while\" statement", @4);
         }
-    | DO statement WHILE '(' assignment ')' ';'
+    | DO marker statement WHILE '(' marker assignment ')' ';'
         {
 			Log("P: Processing matched do..while");
 
 			CheckIsIntOrBool($7, "Only integer and bool types are allowed in \"while\" statement", @7);
         }
-    | FOR '(' assignment_with_declaration ';' assignment ';' assignment ')' matched_statement
+    | FOR '(' assignment_with_declaration ';' marker assignment ';' marker assignment jump_marker ')' marker matched_statement jump_marker
         {
             Log("P: Processing matched for");
 
@@ -326,19 +326,19 @@ matched_statement
     ;
 
 unmatched_statement
-    : IF '(' assignment ')' statement
+    : IF '(' assignment ')' marker statement
         {
 			Log("P: Processing unmatched if");
 
 			CheckIsIntOrBool($3, "Only integer and bool types are allowed in \"if\" statement", @3);
         }
-    | WHILE '(' assignment ')' unmatched_statement
+    | WHILE marker '(' assignment ')' marker unmatched_statement jump_marker
         {
 			Log("P: Processing unmatched while");
 
 			CheckIsIntOrBool($4, "Only integer and bool types are allowed in \"while\" statement", @4);
         }
-    | FOR '(' assignment_with_declaration ';' assignment ';' assignment ')' unmatched_statement
+    | FOR '(' assignment_with_declaration ';' marker assignment ';' marker assignment jump_marker ')' marker unmatched_statement jump_marker
         {
             Log("P: Processing unmatched for");
 
@@ -347,7 +347,7 @@ unmatched_statement
 			CheckIsInt($9, "Integer assignment is required in the last part of \"for\" statement", @9);
         }
 
-    | IF '(' assignment ')' matched_statement ELSE unmatched_statement
+    | IF '(' assignment ')' marker matched_statement jump_marker ELSE marker unmatched_statement
         {
 			Log("P: Processing unmatched if else");
 
@@ -541,11 +541,11 @@ expression
 
 			CheckIsInt($2, "Specified type is not allowed in arithmetic operations", @1);
         }
-    | expression LOG_OR expression
+    | expression LOG_OR marker expression
         {
 
 	    }
-    | expression LOG_AND expression
+    | expression LOG_AND marker expression
 		{
 
 		}
@@ -706,6 +706,24 @@ id
 			$$ = _strdup(yytext);
         }
     ;
+
+marker
+	:	{	
+			Log("P: Generating marker");
+
+			$$.ip = c.NextIp();
+		}
+	;
+
+jump_marker
+	:	{
+			Log("P: Generating jump marker");
+
+			$$.ip = c.NextIp();
+			sprintf_s(output_buffer, "goto");
+			$$.next_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+		}
+	;
 
 %%
 
