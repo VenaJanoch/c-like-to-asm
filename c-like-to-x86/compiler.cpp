@@ -103,6 +103,20 @@ void Compiler::BackpatchStream(BackpatchList* list, int32_t new_ip)
     }
 }
 
+SymbolTableEntry* Compiler::FindSymbolByName(const char* name)
+{
+    SymbolTableEntry* current = symbol_table;
+    while (current) {
+        if (current->name && strcmp(name, current->name) == 0) {
+            break;
+        }
+
+        current = current->next;
+    }
+
+    return current;
+}
+
 bool Compiler::CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type)
 {
 	if (from == to) {
@@ -146,6 +160,45 @@ SymbolType Compiler::GetLargestTypeForArithmetic(SymbolType a, SymbolType b)
 	return SymbolType::Unknown;
 }
 
+int32_t Compiler::NextIp()
+{
+    return current_ip + 1;
+}
+
+SymbolTableEntry* Compiler::GetUnusedVariable(SymbolType type)
+{
+    char buffer[20];
+
+    switch (type) {
+        case SymbolType::Bool: {
+            var_count_bool++;
+            sprintf_s(buffer, "__b_%d", var_count_bool);
+            break;
+        }
+
+        case SymbolType::Uint8: {
+            var_count_uint8++;
+            sprintf_s(buffer, "__ui8_%d", var_count_uint8);
+            break;
+        }
+
+        case SymbolType::Uint16: {
+            var_count_uint16++;
+            sprintf_s(buffer, "__ui16_%d", var_count_uint16);
+            break;
+        }
+
+        case SymbolType::Uint32: {
+            var_count_uint32++;
+            sprintf_s(buffer, "__ui32_%d", var_count_uint32);
+            break;
+        }
+
+        default: throw CompilerException(CompilerExceptionSource::Unknown, "Internal error");
+    }
+
+    return ToDeclarationList(type, buffer, ExpressionType::Variable);
+}
 
 const char* Compiler::SymbolTypeToString(SymbolType type)
 {
@@ -275,6 +328,36 @@ SymbolTableEntry* Compiler::ToCallParameterList(SymbolTableEntry* list, SymbolTy
 	else {
 		return symbol;
 	}
+}
+
+void Compiler::AddLabel(const char* name, int32_t ip)
+{
+    SymbolTableEntry* symbol = new SymbolTableEntry();
+    symbol->name = _strdup(name);
+    symbol->type = SymbolType::Label;
+    symbol->ip = ip;
+
+    if (declaration_queue) {
+        SymbolTableEntry* entry = declaration_queue;
+        while (entry->next) {
+            if (strcmp(name, entry->name) == 0) {
+                std::string message = "Label \"";
+                message += name;
+                message += "\" is already declared in this scope";
+                throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+            }
+            entry = entry->next;
+        }
+        entry->next = symbol;
+    } else {
+        declaration_queue = symbol;
+    }
+}
+
+void Compiler::AddStaticVariable(SymbolType type, const char* name)
+{
+    SymbolTableEntry* entry = AddSymbol(name, type, ReturnSymbolType::Unknown,
+        ExpressionType::Variable, 0, GetSymbolTypeSize(type), 0, nullptr);
 }
 
 SymbolTableEntry* Compiler::GetParameter(const char* name)
