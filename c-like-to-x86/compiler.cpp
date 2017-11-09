@@ -9,6 +9,7 @@
 extern int yylex();
 extern int yyparse();
 extern FILE* yyin;
+extern int yylineno;
 
 Compiler::Compiler()
 {
@@ -198,4 +199,125 @@ int32_t Compiler::GetSymbolTypeSize(SymbolType type)
 
 	default: throw CompilerException(CompilerExceptionSource::Unknown, "Internal error");
 	}
+}
+
+SymbolTableEntry* Compiler::ToDeclarationList(SymbolType type, const char* name, ExpressionType expression_type)
+{
+	SymbolTableEntry* symbol = new SymbolTableEntry();
+	symbol->name = _strdup(name);
+	symbol->type = type;
+	symbol->expression_type = expression_type;
+	symbol->offset_or_size = GetSymbolTypeSize(type);
+
+	if (declaration_queue) {
+		SymbolTableEntry* entry = declaration_queue;
+		while (entry->next) {
+			if (strcmp(name, entry->name) == 0) {
+				std::string message = "Variable \"";
+				message += name;
+				message += "\" is already declared in this scope";
+				throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+			}
+			entry = entry->next;
+		}
+		entry->next = symbol;
+	}
+	else {
+		declaration_queue = symbol;
+	}
+
+	return symbol;
+}
+
+void Compiler::ToParameterList(SymbolType type, const char* name)
+{
+	parameter_count++;
+
+	SymbolTableEntry* symbol = new SymbolTableEntry();
+	symbol->name = _strdup(name);
+	symbol->type = type;
+	symbol->offset_or_size = GetSymbolTypeSize(type);
+	symbol->parameter = parameter_count;
+
+	if (declaration_queue) {
+		SymbolTableEntry* entry = declaration_queue;
+		while (entry->next) {
+			if (strcmp(name, entry->name) == 0) {
+				std::string message = "Parameter \"";
+				message += name;
+				message += "\" is already declared in this scope";
+				throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+			}
+			entry = entry->next;
+		}
+		entry->next = symbol;
+	}
+	else {
+		declaration_queue = symbol;
+	}
+}
+
+SymbolTableEntry* Compiler::ToCallParameterList(SymbolTableEntry* list, SymbolType type, const char* name, ExpressionType expression_type)
+{
+	SymbolTableEntry* symbol = new SymbolTableEntry();
+	symbol->name = _strdup(name);
+	symbol->type = type;
+	symbol->expression_type = expression_type;
+
+	if (list) {
+		SymbolTableEntry* entry = list;
+		while (entry->next) {
+			entry = entry->next;
+		}
+		entry->next = symbol;
+		return list;
+	}
+	else {
+		return symbol;
+	}
+}
+
+SymbolTableEntry* Compiler::GetParameter(const char* name)
+{
+	// Search in function-local variable list
+	SymbolTableEntry* current = declaration_queue;
+	while (current) {
+		if (strcmp(name, current->name) == 0) {
+			return current;
+		}
+
+		current = current->next;
+	}
+
+	if (!current) {
+		// Search in static variable list
+		current = symbol_table;
+		while (current) {
+			if (!current->parent &&
+				current->type != SymbolType::Function &&
+				current->type != SymbolType::FunctionPrototype &&
+				current->type != SymbolType::EntryPoint &&
+				strcmp(name, current->name) == 0) {
+				return current;
+			}
+
+			current = current->next;
+		}
+	}
+
+	return nullptr;
+}
+
+SymbolTableEntry* Compiler::GetFunction(const char* name)
+{
+	SymbolTableEntry* current = symbol_table;
+	while (current) {
+		if ((current->type == SymbolType::Function || current->type == SymbolType::FunctionPrototype) && strcmp(name, current->name) == 0) {
+			return current;
+		}
+
+		current = current->next;
+	}
+
+	return nullptr;
 }

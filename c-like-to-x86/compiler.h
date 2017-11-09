@@ -62,6 +62,14 @@ public:
     BackpatchList* AddToStreamWithBackpatch(InstructionType type, char* code);
     void BackpatchStream(BackpatchList* list, int32_t new_ip);
 
+	SymbolTableEntry* ToDeclarationList(SymbolType type, const char* name, ExpressionType expression_type);
+	void ToParameterList(SymbolType type, const char* name);
+	SymbolTableEntry* ToCallParameterList(SymbolTableEntry* queue, SymbolType type, const char* name, ExpressionType expression_type);
+
+
+	SymbolTableEntry* GetParameter(const char* name);
+	SymbolTableEntry* GetFunction(const char* name);
+
 	bool CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type);
 
 	SymbolType GetLargestTypeForArithmetic(SymbolType a, SymbolType b);

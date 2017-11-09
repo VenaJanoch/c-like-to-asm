@@ -11,6 +11,10 @@ enum struct SymbolType {
 
     Label,
 
+	Function,
+	FunctionPrototype,
+	EntryPoint,
+
     Bool,
     Uint8,
     Uint16,
