@@ -264,7 +264,16 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 	yylval.expression.value = _strdup(yytext);
 	yylval.expression.expression_type = ExpressionType::Constant;
-	yylval.expression.type = SymbolType::Uint32;
+
+	int32_t value = atoi(yytext);
+	if (value == (int8_t)value || value == (uint8_t)value) {
+        yylval.expression.type = SymbolType::Uint8;
+    } else if (value == (int16_t)value || value == (uint16_t)value) {
+        yylval.expression.type = SymbolType::Uint16;
+    } else {
+        yylval.expression.type = SymbolType::Uint32;
+    }
+
 	allow_unary = false;
 	return CONSTANT;
 }

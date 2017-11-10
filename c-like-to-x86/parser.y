@@ -278,30 +278,58 @@ matched_statement
 			Log("P: Processing matched if..else");
 
 			CheckIsIntOrBool($3, "Only integer and bool types are allowed in \"if\" statement", @3);
+
+			c.BackpatchStream($3.true_list, $5.ip);
+			c.BackpatchStream($3.false_list, $9.ip);
+			$$.next_list = MergeLists($7.next_list, $10.next_list);
+			$$.next_list = MergeLists($$.next_list, $6.next_list);
         }
     | assignment_with_declaration ';'
         {
 			Log("P: Processing matched assignment");
+
+			// Nothing to backpatch here...
+			$$.next_list = nullptr;
 		}
     | RETURN ';'
         {
 			Log("P: Processing void return");
+
+			$$.next_list = nullptr;
+			sprintf_s(output_buffer, "return");
+			InstructionEntry* i = c.AddToStream(InstructionType::Return, output_buffer);
+			i->return_statement.type = ExpressionType::None;
         }
     | RETURN assignment ';'
         {
 			Log("P: Processing value return");
+
+			$$.next_list = nullptr;
+			sprintf_s(output_buffer, "return %s", $2.value);
+			InstructionEntry* i = c.AddToStream(InstructionType::Return, output_buffer);
+			i->return_statement.value = $2.value;
+			i->return_statement.type = $2.expression_type;
         }
     | WHILE marker '(' assignment ')' marker matched_statement jump_marker
         {
 			Log("P: Processing matched while");
 
 			CheckIsIntOrBool($4, "Only integer and bool types are allowed in \"while\" statement", @4);
+
+			c.BackpatchStream($4.true_list, $6.ip);
+			$$.next_list = $4.false_list;
+			c.BackpatchStream($7.next_list, $2.ip);
+			c.BackpatchStream($8.next_list, $2.ip);
         }
     | DO marker statement WHILE '(' marker assignment ')' ';'
         {
 			Log("P: Processing matched do..while");
 
 			CheckIsIntOrBool($7, "Only integer and bool types are allowed in \"while\" statement", @7);
+
+			c.BackpatchStream($3.next_list, $6.ip);
+			c.BackpatchStream($7.true_list, $2.ip);
+			$$.next_list = $7.false_list;
         }
     | FOR '(' assignment_with_declaration ';' marker assignment ';' marker assignment jump_marker ')' marker matched_statement jump_marker
         {
@@ -310,18 +338,35 @@ matched_statement
             CheckIsInt($3, "Integer assignment is required in the first part of \"for\" statement", @3);
 			CheckIsBool($6, "Bool expression is required in the middle part of \"for\" statement", @6);
 			CheckIsInt($9, "Integer assignment is required in the last part of \"for\" statement", @9);
+
+            c.BackpatchStream($3.true_list, $5.ip);
+            c.BackpatchStream($13.next_list, $8.ip);
+            c.BackpatchStream($14.next_list, $8.ip);
+            $$.next_list = $6.false_list;
+            c.BackpatchStream($6.true_list, $12.ip);
+            c.BackpatchStream($9.true_list, $5.ip);
+            c.BackpatchStream($10.next_list, $5.ip);
         }
 	| GOTO id ';'
 		{
 			Log("P: Processing goto command");
+
+			$$.next_list = nullptr;
+			sprintf_s(output_buffer, "goto %s", $2);
+			InstructionEntry* i = c.AddToStream(InstructionType::GotoLabel, output_buffer);
+			i->goto_label_statement.label = $2;
 		}
     | '{' statement_list '}'
         {
 			Log("P: Processing statement block");
+
+			$$.next_list = $2.next_list;
         }
     | '{' '}'
         {	    
 			Log("P: Processing empty block");
+
+			$$.next_list = NULL;
         }
     ;
 
@@ -331,12 +376,20 @@ unmatched_statement
 			Log("P: Processing unmatched if");
 
 			CheckIsIntOrBool($3, "Only integer and bool types are allowed in \"if\" statement", @3);
+
+			c.BackpatchStream($3.true_list, $5.ip);
+			$$.next_list = MergeLists($3.false_list, $6.next_list);
         }
     | WHILE marker '(' assignment ')' marker unmatched_statement jump_marker
         {
 			Log("P: Processing unmatched while");
 
 			CheckIsIntOrBool($4, "Only integer and bool types are allowed in \"while\" statement", @4);
+
+			c.BackpatchStream($4.true_list, $6.ip);
+			$$.next_list = $4.false_list;
+			c.BackpatchStream($7.next_list, $2.ip);
+			c.BackpatchStream($8.next_list, $2.ip);
         }
     | FOR '(' assignment_with_declaration ';' marker assignment ';' marker assignment jump_marker ')' marker unmatched_statement jump_marker
         {
@@ -345,6 +398,14 @@ unmatched_statement
 			CheckIsInt($3, "Integer assignment is required in the first part of \"for\" statement", @3);
 			CheckIsBool($6, "Bool expression is required in the middle part of \"for\" statement", @6);
 			CheckIsInt($9, "Integer assignment is required in the last part of \"for\" statement", @9);
+
+            c.BackpatchStream($3.true_list, $5.ip);
+            c.BackpatchStream($13.next_list, $8.ip);
+            c.BackpatchStream($14.next_list, $8.ip);
+            $$.next_list = $6.false_list;
+            c.BackpatchStream($6.true_list, $12.ip);
+            c.BackpatchStream($9.true_list, $5.ip);
+            c.BackpatchStream($10.next_list, $5.ip);
         }
 
     | IF '(' assignment ')' marker matched_statement jump_marker ELSE marker unmatched_statement
@@ -352,6 +413,11 @@ unmatched_statement
 			Log("P: Processing unmatched if else");
 
 			CheckIsIntOrBool($3, "Only integer and bool types are allowed in \"if\" statement", @3);
+
+			c.BackpatchStream($3.true_list, $5.ip);
+			c.BackpatchStream($3.false_list, $9.ip);
+			$$.next_list = MergeLists($7.next_list, $10.next_list);
+			$$.next_list = MergeLists($$.next_list, $6.next_list);
         }
     ;
 	
@@ -533,21 +599,129 @@ expression
         {
 			Log("P: Processing increment");
 
-			CheckIsInt($2, "Specified type is not allowed in arithmetic operations", @1);
+						CheckIsInt($2, "Specified type is not allowed in arithmetic operations", @1);
+
+			SymbolTableEntry* decl;
+
+			// Create a variable if needed
+			if ($2.expression_type != ExpressionType::Variable) {
+				decl = c.GetUnusedVariable($2.type);
+
+				sprintf_s(output_buffer, "%s = %s", decl->name, $2.value);
+				InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+				i->assignment.dst_value = decl->name;
+				i->assignment.op1_value = $2.value;
+				i->assignment.op1_type = $2.type;
+				i->assignment.op1_exp_type = $2.expression_type;
+
+				$2.value = decl->name;
+				$2.type = decl->type;
+				$2.expression_type = ExpressionType::Variable;
+			} else {
+				decl = c.GetParameter($2.value);
+			}
+
+            sprintf_s(output_buffer, "%s = %s + 1", $2.value, $2.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			i->assignment.type = AssignType::Add;
+			i->assignment.dst_value = decl->name;
+			i->assignment.op1_value = $2.value;
+			i->assignment.op1_type = $2.type;
+			i->assignment.op1_exp_type = $2.expression_type;
+			i->assignment.op2_value = _strdup("1");
+			i->assignment.op2_type = $2.type;
+			i->assignment.op2_exp_type = ExpressionType::Constant;
+
+            $$ = $2;
+            $$.true_list = nullptr;
+            $$.false_list = nullptr;
         }
     | DEC_OP expression
         {
 			Log("P: Processing decrement");
 
 			CheckIsInt($2, "Specified type is not allowed in arithmetic operations", @1);
+
+			SymbolTableEntry* decl;
+
+			// Create a variable if needed
+			if ($2.expression_type != ExpressionType::Variable) {
+				decl = c.GetUnusedVariable($2.type);
+
+				sprintf_s(output_buffer, "%s = %s", decl->name, $2.value);
+				InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+				i->assignment.dst_value = decl->name;
+				i->assignment.op1_value = $2.value;
+				i->assignment.op1_type = $2.type;
+				i->assignment.op1_exp_type = $2.expression_type;
+
+				$2.value = decl->name;
+				$2.type = decl->type;
+				$2.expression_type = ExpressionType::Variable;
+			} else {
+				decl = c.GetParameter($2.value);
+			}
+
+            sprintf_s(output_buffer, "%s = %s - 1", $2.value, $2.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			i->assignment.type = AssignType::Subtract;
+			i->assignment.dst_value = decl->name;
+			i->assignment.op1_value = $2.value;
+			i->assignment.op1_type = $2.type;
+			i->assignment.op1_exp_type = $2.expression_type;
+			i->assignment.op2_value = _strdup("1");
+			i->assignment.op2_type = $2.type;
+			i->assignment.op2_exp_type = ExpressionType::Constant;
+
+            $$ = $2;
+            $$.true_list = nullptr;
+            $$.false_list = nullptr;
         }
     | expression LOG_OR marker expression
         {
+			if (SymbolType::Bool != $1.type) {
+                sprintf_s(output_buffer, "if (%s != 0) goto", $1.value);
+                CreateIfConstWithBackpatch($1.true_list, CompareType::NotEqual, $1, "0");
+                
+				sprintf_s(output_buffer, "goto");
+                $1.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+            }
 
+            if (SymbolType::Bool != $4.type) {
+                sprintf_s(output_buffer, "if (%s != 0) goto", $4.value);
+                CreateIfConstWithBackpatch($4.true_list, CompareType::NotEqual, $4, "0");
+                
+				sprintf_s(output_buffer, "goto");
+                $4.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+            }
+
+            $$.true_list = MergeLists($1.true_list, $4.true_list);
+            c.BackpatchStream($1.false_list, $3.ip);
+            $$.false_list = $4.false_list;
+            $$.type = SymbolType::Bool;
 	    }
     | expression LOG_AND marker expression
 		{
+			if (SymbolType::Bool != $1.type) {
+				sprintf_s(output_buffer, "if (%s != 0) goto", $1.value);
+				CreateIfConstWithBackpatch($1.true_list, CompareType::NotEqual, $1, "0");
 
+				sprintf_s(output_buffer, "goto");
+				$1.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+			}
+
+			if (SymbolType::Bool != $4.type) {
+				sprintf_s(output_buffer, "if (%s != 0) goto", $4.value);
+				CreateIfConstWithBackpatch($4.true_list, CompareType::NotEqual, $4, "0");
+
+				sprintf_s(output_buffer, "goto");
+				$4.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+			}
+
+			$$.false_list = MergeLists($1.false_list, $4.false_list);
+			c.BackpatchStream($1.true_list, $3.ip);
+			$$.true_list = $4.true_list;
+			$$.type = SymbolType::Bool;
 		}
     | expression NOT_EQUAL expression
         {
@@ -555,6 +729,15 @@ expression
 
 			CheckIsIntOrBool($1, "Only integer and bool types are allowed in comparsions", @1);
 			CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
+
+			sprintf_s(output_buffer, "if (%s != %s) goto", $1.value, $3.value);
+			CreateIfWithBackpatch($$.true_list, CompareType::NotEqual, $1, $3);
+
+			sprintf_s(output_buffer, "goto");
+			$$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+
+			$$.type = SymbolType::Bool;
+			$$.expression_type = ExpressionType::None;
         }
     | expression EQUAL expression
         {
@@ -562,6 +745,24 @@ expression
 
 			CheckIsIntOrBool($1, "Only integer and bool types are allowed in comparsions", @1);
 			CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
+
+			sprintf_s(output_buffer, "if (%s == %s) goto", $1.value, $3.value);
+			CreateIfWithBackpatch($$.true_list, CompareType::Equal, $1, $3);
+
+			sprintf_s(output_buffer, "goto");
+			$$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+
+			if ($1.type == SymbolType::Bool) {
+				$$.true_list = MergeLists($$.true_list, $1.true_list);
+				$$.false_list = MergeLists($$.false_list, $1.false_list);
+			}
+			if ($3.type == SymbolType::Bool) {
+				$$.true_list = MergeLists($$.true_list, $3.true_list);
+				$$.false_list = MergeLists($$.false_list, $3.false_list);
+			}
+
+			$$.type = SymbolType::Bool;
+			$$.expression_type = ExpressionType::None;
         }
     | expression GREATER_OR_EQUAL expression
         {
