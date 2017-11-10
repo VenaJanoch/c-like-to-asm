@@ -18,6 +18,10 @@
 #define EntryPointName "main"
 
 // Defines to shorten the code
+#define TypeIsValid(type)                                                       \
+    (type == SymbolType::Uint8  ||  type == SymbolType::Uint16 ||               \
+     type == SymbolType::Uint32 ||  type == SymbolType::Bool)
+
 #define CheckTypeIsValid(type, loc)                                             \
     if (type != SymbolType::Uint8  &&                                           \
         type != SymbolType::Uint16 &&                                           \
@@ -49,6 +53,43 @@
         throw CompilerException(CompilerExceptionSource::Statement,         \
             message, loc.first_line, loc.first_column);                     \
     }
+
+#define FillInstructionForAssign(i, assign_type, dst, op1, op2)             \
+    {                                                                       \
+        i->assignment.type = assign_type;                                   \
+        i->assignment.dst_value = dst->name;                               \
+        i->assignment.op1_value = op1.value;                                \
+        i->assignment.op1_type = op1.type;                                  \
+        i->assignment.op1_exp_type = op1.expression_type;                   \
+        i->assignment.op2_value = op2.value;                                \
+        i->assignment.op2_type = op2.type;                                  \
+        i->assignment.op2_exp_type = op2.expression_type;                   \
+    }
+
+#define CreateIfWithBackpatch(backpatch, compare_type, op1, op2)            \
+    {                                                                       \
+        backpatch = c.AddToStreamWithBackpatch(InstructionType::If, output_buffer); \
+        backpatch->entry->if_statement.type = compare_type;                 \
+        backpatch->entry->if_statement.op1_value = op1.value;               \
+        backpatch->entry->if_statement.op1_type = op1.type;                 \
+        backpatch->entry->if_statement.op1_exp_type = op1.expression_type;  \
+        backpatch->entry->if_statement.op2_value = op2.value;               \
+        backpatch->entry->if_statement.op2_type = op2.type;                 \
+        backpatch->entry->if_statement.op2_exp_type = op2.expression_type;  \
+    }
+
+#define CreateIfConstWithBackpatch(backpatch, compare_type, op1, constant)  \
+    {                                                                       \
+        backpatch = c.AddToStreamWithBackpatch(InstructionType::If, output_buffer); \
+        backpatch->entry->if_statement.type = compare_type;                 \
+        backpatch->entry->if_statement.op1_value = op1.value;               \
+        backpatch->entry->if_statement.op1_type = op1.type;                 \
+        backpatch->entry->if_statement.op1_exp_type = op1.expression_type;  \
+        backpatch->entry->if_statement.op2_value = constant;                \
+        backpatch->entry->if_statement.op2_type = op1.type;                 \
+        backpatch->entry->if_statement.op2_exp_type = ExpressionType::Constant; \
+    }
+
 
 class Compiler
 {

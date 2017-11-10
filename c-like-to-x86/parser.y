@@ -770,6 +770,16 @@ expression
 
 			CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
 			CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
+
+			sprintf_s(output_buffer, "if (%s >= %s) goto", $1.value, $3.value);
+			CreateIfWithBackpatch($$.true_list, CompareType::GreaterOrEqual, $1, $3);
+
+			sprintf_s(output_buffer, "goto");
+			$$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+
+			$$.value = "TrueFalse Only!";
+			$$.type = SymbolType::Bool;
+			$$.expression_type = ExpressionType::None;
         }
     | expression LESS_OR_EQUAL expression
         {
@@ -777,6 +787,17 @@ expression
 
 			CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
 			CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
+
+			sprintf_s(output_buffer, "if (%s <= %s) goto", $1.value, $3.value);
+			CreateIfWithBackpatch($$.true_list, CompareType::LessOrEqual, $1, $3);
+
+			sprintf_s(output_buffer, "goto");
+			$$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+
+			$$.value = "TrueFalse Only!";
+			$$.type = SymbolType::Bool;
+			$$.expression_type = ExpressionType::None;
+			printf("P: Done processing logical smaller or equal.\n");
         }
     | expression '>' expression
         {
@@ -784,6 +805,16 @@ expression
 
 			CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
 			CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
+
+			sprintf_s(output_buffer, "if (%s > %s) goto", $1.value, $3.value);
+			CreateIfWithBackpatch($$.true_list, CompareType::Greater, $1, $3);
+
+			sprintf_s(output_buffer, "goto");
+			$$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+
+			$$.value = "TrueFalse Only!";
+			$$.type = SymbolType::Bool;
+			$$.expression_type = ExpressionType::None;
         }
     | expression '<' expression
         {
@@ -791,6 +822,16 @@ expression
 
 			CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
 			CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
+
+			sprintf_s(output_buffer, "if (%s < %s) goto", $1.value, $3.value);
+			CreateIfWithBackpatch($$.true_list, CompareType::Less, $1, $3);
+
+			sprintf_s(output_buffer, "goto");
+			$$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+
+			$$.value = "TrueFalse Only!";
+			$$.type = SymbolType::Bool;
+			$$.expression_type = ExpressionType::None;
         }
     | expression SHIFT_LEFT expression
         {
@@ -829,18 +870,55 @@ expression
     | '!' expression
         {
 			Log("P: Processing logical not");
+
+			if ($2.type == SymbolType::Bool) {
+				$$ = $2;
+				$$.true_list = $2.false_list;
+				$$.false_list = $2.true_list;
+			} else if ($2.type == SymbolType::Uint8 || $2.type == SymbolType::Uint16 || $2.type == SymbolType::Uint32) {
+				sprintf_s(output_buffer, "if (%s != 0) goto", $2.value);
+				CreateIfConstWithBackpatch($$.false_list, CompareType::NotEqual, $2, "0");
+
+				sprintf_s(output_buffer, "goto");
+				$$.true_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+			} else {
+				throw CompilerException(CompilerExceptionSource::Statement,
+					"Specified type is not allowed in logical operations", @1.first_line, @1.first_column);
+			}
 		}
     | U_PLUS expression
         {
 			CheckIsInt($2, "Unary operator is not allowed in this context", @1);
+
+			$$ = $2;
         }
     | U_MINUS expression
         {
 			CheckIsInt($2, "Unary operator is not allowed in this context", @1);
+
+			SymbolTableEntry* decl = c.GetUnusedVariable($2.type);
+			decl->expression_type = $2.expression_type;
+
+			sprintf_s(output_buffer, "%s = -%s", decl->name, $2.value);
+			InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			i->assignment.type = AssignType::Negation;
+			i->assignment.dst_value = decl->name;
+			i->assignment.op1_value = $2.value;
+			i->assignment.op1_type = $2.type;
+			i->assignment.op1_exp_type = $2.expression_type;
+
+			$$ = $2;
+			$$.value = decl->name;
+			$$.expression_type = ExpressionType::Variable;
        }
     | CONSTANT
         {
 			Log("P: Processing constant");
+
+			$$.value = _strdup($1.value);
+			$$.expression_type = ExpressionType::Constant;
+            $$.true_list = nullptr;
+			$$.false_list = nullptr;
         }
     | '(' expression ')'
         {
@@ -851,14 +929,107 @@ expression
     | id '(' call_parameter_list ')'
         {
 			Log("P: Processing function call with parameters");
+
+            SymbolTableEntry* func = c.GetFunction($1);
+            if (!func || func->return_type == ReturnSymbolType::Unknown) {
+				std::string message = "Function \"";
+				message += $1;
+				message += "\" is not defined";
+				throw CompilerException(CompilerExceptionSource::Statement,
+					message, @1.first_line, @1.first_column);
+            }
+
+			if (func->return_type == ReturnSymbolType::Void) {
+				// Has void return
+				$$.type = SymbolType::None;
+				$$.value = nullptr;
+				$$.expression_type = ExpressionType::None;
+				c.PrepareForCall($1, $3.list, $3.count);
+
+				sprintf_s(output_buffer, "call %s (%d)", $1, $3.count);
+				InstructionEntry* i = c.AddToStream(InstructionType::Call, output_buffer);
+				i->call_statement.target = func;
+			} else {
+				// Has return value
+				switch (func->return_type) {
+					case ReturnSymbolType::Bool: $$.type = SymbolType::Bool; break;
+					case ReturnSymbolType::Uint8: $$.type = SymbolType::Uint8; break;
+					case ReturnSymbolType::Uint16: $$.type = SymbolType::Uint16; break;
+					case ReturnSymbolType::Uint32: $$.type = SymbolType::Uint32; break;
+
+					default: throw CompilerException(CompilerExceptionSource::Unknown, "Internal error");
+				}
+
+				SymbolTableEntry* decl = c.GetUnusedVariable($$.type);
+
+				$$.value = decl->name;
+				$$.expression_type = ExpressionType::Variable;
+				c.PrepareForCall($1, $3.list, $3.count);
+
+				sprintf_s(output_buffer, "%s = call %s (%d)", decl->name, $1, $3.count);
+				InstructionEntry* i = c.AddToStream(InstructionType::Call, output_buffer);
+				i->call_statement.target = func;
+				i->call_statement.return_symbol = decl->name;
+			}
         }
     | id '('  ')'
         {
 			Log("P: Processing function call");
+
+			SymbolTableEntry* func = c.GetFunction($1);
+            if (!func || func->return_type == ReturnSymbolType::Unknown) {
+				std::string message = "Function \"";
+				message += $1;
+				message += "\" is not defined";
+				throw CompilerException(CompilerExceptionSource::Statement,
+					message, @1.first_line, @1.first_column);
+            }
+
+			if (func->return_type == ReturnSymbolType::Void) {
+				// Has return value
+				$$.type = SymbolType::None;
+				$$.value = nullptr;
+				$$.expression_type = ExpressionType::None;
+				c.PrepareForCall($1, nullptr, 0);
+
+				sprintf_s(output_buffer, "call %s (%d)", $1, 0);
+				InstructionEntry* i = c.AddToStream(InstructionType::Call, output_buffer);
+				i->call_statement.target = func;
+			} else {
+				// Has void return
+				switch (func->return_type) {
+					case ReturnSymbolType::Bool: $$.type = SymbolType::Bool; break;
+					case ReturnSymbolType::Uint8: $$.type = SymbolType::Uint8; break;
+					case ReturnSymbolType::Uint16: $$.type = SymbolType::Uint16; break;
+					case ReturnSymbolType::Uint32: $$.type = SymbolType::Uint32; break;
+
+					default: throw CompilerException(CompilerExceptionSource::Unknown, "Internal error");
+				}
+
+				SymbolTableEntry* decl = c.GetUnusedVariable($$.type);
+
+				$$.value = decl->name;
+				$$.expression_type = ExpressionType::Variable;
+				c.PrepareForCall($1, nullptr, 0);
+
+				sprintf_s(output_buffer, "%s = call %s (%d)", decl->name, $1, 0);
+				InstructionEntry* i = c.AddToStream(InstructionType::Call, output_buffer);
+				i->call_statement.target = func;
+				i->call_statement.return_symbol = decl->name;
+			}
         }
     | id
         {
 			Log("P: Processing identifier");
+
+			SymbolTableEntry* param = c.GetParameter($1);
+            if (!param) {
+				std::string message = "Variable \"";
+                message += $1;
+                message += "\" is not declared in scope";
+                throw CompilerException(CompilerExceptionSource::Statement,
+					message, @1.first_line, @1.first_column);
+            }
 
 			$$.value = $1;
 			$$.type = param->type;
