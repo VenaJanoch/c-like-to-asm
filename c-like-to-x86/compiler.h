@@ -109,6 +109,11 @@ public:
 
     void AddLabel(const char* name, int32_t ip);
     void AddStaticVariable(SymbolType type, const char* name);
+	void AddFunction(char* name, ReturnSymbolType return_type);
+	void AddFunctionPrototype(char* name, ReturnSymbolType return_type);
+
+	void PrepareForCall(const char* name, SymbolTableEntry* call_parameters, int32_t parameter_count);
+
 
 	SymbolTableEntry* GetParameter(const char* name);
 	SymbolTableEntry* GetFunction(const char* name);
@@ -133,6 +138,8 @@ public:
     SymbolTableEntry* GetUnusedVariable(SymbolType type);
 
     int32_t GetSymbolTypeSize(SymbolType type);
+	void ReleaseDeclarationQueue();
+
     int32_t GetReturnSymbolTypeSize(ReturnSymbolType type);
 
 private:

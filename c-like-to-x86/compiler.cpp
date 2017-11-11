@@ -360,6 +360,298 @@ void Compiler::AddStaticVariable(SymbolType type, const char* name)
         ExpressionType::Variable, 0, GetSymbolTypeSize(type), 0, nullptr);
 }
 
+void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
+{
+
+	int32_t ip = function_ip;
+	function_ip = NextIp();
+
+	Log("P: Found function definition \"" << name << "\" (" << parameter_count << " parameters) at " << ip);
+
+	uint32_t offset_internal = 0;
+
+	if (strcmp(name, EntryPointName) == 0) {
+		// Entry point found
+		if (parameter_count != 0) {
+			throw CompilerException(CompilerExceptionSource::Declaration, "Entry point must have zero parameters", yylineno, -1);
+		}
+		if (return_type != ReturnSymbolType::Uint8) {
+			throw CompilerException(CompilerExceptionSource::Declaration, "Entry point must return \"uint8\" value", yylineno, -1);
+		}
+
+		// Collect all variables used in the function
+		SymbolTableEntry* current = declaration_queue;
+		while (current) {
+			int32_t size = current->offset_or_size;
+
+			Log(" - " << current->name << " (" << size << " bytes)");
+
+			AddSymbol(current->name, current->type, current->return_type,
+				current->expression_type, current->ip, offset_internal, 0, name);
+
+			offset_internal += size;
+			offset_global += size;
+
+			current = current->next;
+		}
+
+		SymbolTableEntry* entry = AddSymbol(name, SymbolType::EntryPoint, return_type,
+			ExpressionType::None, ip, offset_internal, 0, nullptr);
+
+		// Move entry point to the beginning of the list
+		if (symbol_table != entry) {
+			SymbolTableEntry* entry_before = symbol_table;
+			while (entry_before->next != entry) {
+				entry_before = entry_before->next;
+			}
+
+			entry_before->next = entry->next;
+			entry->next = symbol_table;
+			symbol_table = entry;
+		}
+
+		ReleaseDeclarationQueue();
+		return;
+	}
+
+	// Find function prototype
+	SymbolTableEntry* prototype = symbol_table;
+	while (prototype) {
+		if (prototype->type == SymbolType::FunctionPrototype && strcmp(name, prototype->name) == 0) {
+			break;
+		}
+
+		prototype = prototype->next;
+	}
+
+	if (prototype) {
+		if ((!declaration_queue && parameter_count != 0) || prototype->parameter != parameter_count) {
+			std::string message = "Parameter count does not match for function \"";
+			message += name;
+			message += "\"";
+			throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+		}
+
+		// Promote the prototype to complete function
+		prototype->type = SymbolType::Function;
+		prototype->ip = ip;
+
+		// Collect all function parameters
+		SymbolTableEntry* current = symbol_table;
+		for (uint16_t i = 0; i < parameter_count; i++) {
+			while (!current->parent) {
+				current = current->next;
+				if (current->parent && strcmp(current->parent, name) == 0) {
+					// Parameter found
+					break;
+				}
+			}
+
+			if (current->type != declaration_queue->type) {
+				std::string message = "Parameter \"";
+				message += current->name;
+				message += "\" type does not match for function \"";
+				message += name;
+				message += "\"";
+				throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+			}
+
+			int32_t size = current->offset_or_size;
+
+			Log(" - " << current->name << " (" << size << " bytes) at " << offset_internal);
+
+			current->offset_or_size = offset_internal;
+
+			offset_internal += size;
+			offset_global += size;
+
+			// Remove parameter from the queue
+			SymbolTableEntry* remove = declaration_queue;
+			declaration_queue = declaration_queue->next;
+			delete remove;
+
+			current = current->next;
+		}
+
+		// Collect all variables used in the function
+		current = declaration_queue;
+		while (current) {
+			int32_t size = current->offset_or_size;
+
+			Log(" - " << current->name << " (" << size << " bytes)");
+
+			AddSymbol(current->name, current->type, current->return_type,
+				current->expression_type, current->ip, offset_internal, 0, name);
+
+			offset_internal += size;
+			offset_global += size;
+
+			current = current->next;
+		}
+
+		// Size of all parameters and variables
+		prototype->offset_or_size = offset_internal;
+
+		ReleaseDeclarationQueue();
+		return;
+	}
+
+	// Prototype was not defined yet
+	if (!declaration_queue && parameter_count != 0) {
+		std::string message = "Parameter count does not match for function \"";
+		message += name;
+		message += "\"";
+		throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+	}
+
+	// Collect all function parameters and used variables
+	uint16_t parameter_current = 0;
+	SymbolTableEntry* current = declaration_queue;
+	while (current) {
+		int32_t size = current->offset_or_size;
+
+		Log(" - " << current->name << " (" << size << " bytes) at " << offset_internal);
+
+		if (parameter_current < parameter_count) {
+			parameter_current++;
+			current->parameter = parameter_current;
+		}
+		else {
+			current->parameter = 0;
+		}
+
+		AddSymbol(current->name, current->type, current->return_type,
+			current->expression_type, current->ip, offset_internal, current->parameter, name);
+
+		offset_internal += size;
+		offset_global += size;
+
+		current = current->next;
+	}
+
+	AddSymbol(name, SymbolType::Function, return_type,
+		ExpressionType::None, ip, offset_internal, parameter_count, nullptr);
+
+	ReleaseDeclarationQueue();
+}
+
+void Compiler::AddFunctionPrototype(char* name, ReturnSymbolType return_type)
+{
+	Log("P: Found function prototype \"" << name << "\" (" << parameter_count << " parameters)");
+
+	if (strcmp(name, EntryPointName) == 0) {
+		throw CompilerException(CompilerExceptionSource::Declaration, "Prototype for entry point is not allowed", yylineno, -1);
+	}
+	if (!declaration_queue && parameter_count != 0) {
+		throw CompilerException(CompilerExceptionSource::Declaration, "Parameter count does not match", yylineno, -1);
+	}
+
+	// Check if the function with the same name is already declared
+	{
+		SymbolTableEntry* current = symbol_table;
+		while (current) {
+			if ((current->type == SymbolType::FunctionPrototype || current->type == SymbolType::Function || current->type == SymbolType::EntryPoint) && strcmp(name, current->name) == 0) {
+				std::string message = "Duplicate function definition for \"";
+				message += current->name;
+				message += "\"";
+				throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+			}
+
+			current = current->next;
+		}
+	}
+
+	AddSymbol(name, SymbolType::FunctionPrototype, return_type,
+		ExpressionType::None, 0, 0, parameter_count, nullptr);
+
+	// Collect all function parameters
+	{
+		uint16_t parameter_current = 0;
+		SymbolTableEntry* current = declaration_queue;
+		while (current) {
+			parameter_current++;
+
+			AddSymbol(current->name, current->type, current->return_type,
+				current->expression_type, current->ip, current->offset_or_size, parameter_current, name);
+
+			current = current->next;
+		}
+	}
+
+	ReleaseDeclarationQueue();
+}
+
+void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameters, int32_t parameter_count)
+{
+	// Find function by its name
+	SymbolTableEntry* current = symbol_table;
+	while (current) {
+		if ((current->type == SymbolType::Function || current->type == SymbolType::FunctionPrototype) && strcmp(name, current->name) == 0) {
+			break;
+		}
+
+		current = current->next;
+	}
+
+	if (!current) {
+		std::string message = "Cannot call function \"";
+		message += name;
+		message += "\", because it was not declared";
+		throw CompilerException(CompilerExceptionSource::Statement, message, yylineno, -1);
+	}
+
+	current = symbol_table;
+	int32_t parameters_found = 0;
+
+	do {
+		// Find parameter description
+		while (current) {
+			if (current->parent && strcmp(name, current->parent) == 0 && current->parameter != 0) {
+				break;
+			}
+
+			current = current->next;
+		}
+
+		if (!call_parameters || !current) {
+			// No parameters found
+			if (parameter_count != 0 || parameters_found != 0) {
+				std::string message = "Cannot call function \"";
+				message += name;
+				message += "\" because of parameter count mismatch";
+				throw CompilerException(CompilerExceptionSource::Statement, message, yylineno, -1);
+			}
+
+			return;
+		}
+
+		// ToDo: Correct ExpressionType
+		if (!CanImplicitCast(current->type, call_parameters->type, call_parameters->expression_type)) {
+			std::string message = "Cannot call function \"";
+			message += name;
+			message += "\" because of parameter \"";
+			message += current->name;
+			message += "\" type mismatch";
+			throw CompilerException(CompilerExceptionSource::Statement, message, yylineno, -1);
+		}
+
+		// Add required parameter to stream
+		char buffer[50];
+		sprintf_s(buffer, "push %s", call_parameters->name);
+		InstructionEntry* i = AddToStream(InstructionType::Push, buffer);
+		i->push_statement.symbol = call_parameters;
+
+		current = current->next;
+
+		// Remove processed entry from the list
+		//SymbolTableEntry* temp = call_parameters;
+		call_parameters = call_parameters->next;
+		//delete temp;
+
+		parameters_found++;
+	} while (parameters_found < parameter_count);
+}
+
 SymbolTableEntry* Compiler::GetParameter(const char* name)
 {
 	// Search in function-local variable list
