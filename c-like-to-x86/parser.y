@@ -850,22 +850,112 @@ expression
     | expression '+' expression
         {
 			Log("P: Processing addition");
+
+			SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
+			if (type == SymbolType::Unknown) {
+				throw CompilerException(CompilerExceptionSource::Statement,
+					"Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
+			}
+
+			SymbolTableEntry* decl = c.GetUnusedVariable(type);
+
+            sprintf_s(output_buffer, "%s = %s + %s", decl->name, $1.value, $3.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			FillInstructionForAssign(i, AssignType::Add, decl, $1, $3);
+
+            $$.value = decl->name;
+            $$.type = type;
+            $$.expression_type = ExpressionType::Variable;
+			$$.true_list = nullptr;
+			$$.false_list = nullptr;
         }
     | expression '-' expression
         {
 			Log("P: Processing substraction");
+
+			SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
+			if (type == SymbolType::Unknown) {
+				throw CompilerException(CompilerExceptionSource::Statement,
+					"Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
+			}
+
+			SymbolTableEntry* decl = c.GetUnusedVariable(type);
+
+            sprintf_s(output_buffer, "%s = %s - %s", decl->name, $1.value, $3.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			FillInstructionForAssign(i, AssignType::Subtract, decl, $1, $3);
+
+            $$.value = decl->name;
+            $$.type = type;
+            $$.expression_type = ExpressionType::Variable;
+			$$.true_list = nullptr;
+			$$.false_list = nullptr;
         }
     | expression '*' expression
         {
 			Log("P: Processing multiplication");
+
+			SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
+			if (type == SymbolType::Unknown) {
+				throw CompilerException(CompilerExceptionSource::Statement,
+					"Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
+			}
+
+			SymbolTableEntry* decl = c.GetUnusedVariable(type);
+
+            sprintf_s(output_buffer, "%s = %s * %s", decl->name, $1.value, $3.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			FillInstructionForAssign(i, AssignType::Multiply, decl, $1, $3);
+
+            $$.value = decl->name;
+            $$.type = type;
+            $$.expression_type = ExpressionType::Variable;
+			$$.true_list = nullptr;
+			$$.false_list = nullptr;
         }
     | expression '/' expression
         {
 			Log("P: Processing division");
+
+			SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
+			if (type == SymbolType::Unknown) {
+				throw CompilerException(CompilerExceptionSource::Statement,
+					"Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
+			}
+
+			SymbolTableEntry* decl = c.GetUnusedVariable(type);
+
+            sprintf_s(output_buffer, "%s = %s / %s", decl->name, $1.value, $3.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			FillInstructionForAssign(i, AssignType::Divide, decl, $1, $3);
+
+            $$.value = decl->name;
+            $$.type = type;
+            $$.expression_type = ExpressionType::Variable;
+			$$.true_list = nullptr;
+			$$.false_list = nullptr;
         }
     | expression '%' expression
         {
 			Log("P: Processing remainder");
+
+			SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
+			if (type == SymbolType::Unknown) {
+				throw CompilerException(CompilerExceptionSource::Statement,
+					"Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
+			}
+
+			SymbolTableEntry* decl = c.GetUnusedVariable(type);
+
+            sprintf_s(output_buffer, "%s = %s %% %s", decl->name, $1.value, $3.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			FillInstructionForAssign(i, AssignType::Remainder, decl, $1, $3);
+
+            $$.value = decl->name;
+            $$.type = type;
+            $$.expression_type = ExpressionType::Variable;
+			$$.true_list = nullptr;
+			$$.false_list = nullptr;
         }
     | '!' expression
         {
