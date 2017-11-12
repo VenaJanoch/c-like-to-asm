@@ -9,13 +9,14 @@
 #include "InstructionEntry.h"
 #include "SymbolTableEntry.h"
 
+#define LogVerbose(text) 
 #define Log(text) { std::cout << text << "\r\n"; }
 
 
 /// <summary>
 /// Name of the function that represents application entry point
 /// </summary>
-#define EntryPointName "main"
+#define EntryPointName "Main"
 
 // Defines to shorten the code
 #define TypeIsValid(type)                                                       \

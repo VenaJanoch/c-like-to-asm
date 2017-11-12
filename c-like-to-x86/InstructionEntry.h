@@ -43,6 +43,12 @@ enum struct CompareType {
     LessOrEqual
 };
 
+struct InstructionOperand {
+    char* value;
+    SymbolType type;
+    ExpressionType exp_type;
+};
+
 struct InstructionEntry {
     char* content;
     int32_t goto_ip;
@@ -55,17 +61,12 @@ struct InstructionEntry {
 
             char* dst_value;
 
-            char* op1_value;
-            SymbolType op1_type;
-            ExpressionType op1_exp_type;
-
-            char* op2_value;
-            SymbolType op2_type;
-            ExpressionType op2_exp_type;
+            InstructionOperand op1;
+            InstructionOperand op2;
         } assignment;
 
         struct {
-            uint32_t goto_ip;
+            uint32_t ip;
         } goto_statement;
 
         struct {
@@ -73,17 +74,12 @@ struct InstructionEntry {
         } goto_label_statement;
 
         struct {
-            int32_t goto_ip;
+            uint32_t ip;
 
             CompareType type;
 
-            char* op1_value;
-            SymbolType op1_type;
-            ExpressionType op1_exp_type;
-
-            char* op2_value;
-            SymbolType op2_type;
-            ExpressionType op2_exp_type;
+            InstructionOperand op1;
+            InstructionOperand op2;
         } if_statement;
 
         struct {

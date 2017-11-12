@@ -33,6 +33,7 @@ PREPROCESSOR ("#".*{NEWLINE})
 INTEGER (0|[1-9][0-9]*)
 BOOL_TRUE true
 BOOL_FALSE false
+STRING (\".*\")
 IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 %%
@@ -56,28 +57,28 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 }
 
 ^"-" {
-	Log("L: Found unary minus");
+	LogVerbose("L: Found unary minus");
 
 	allow_unary = false;
 	return U_MINUS;
 }
 
 ^"+" {
-	Log("L: Found unary plus");
+	LogVerbose("L: Found unary plus");
 
 	allow_unary = false;
 	return U_PLUS;
 }
 
 ("("|")"|"{"|"}"|"<"|">"|"="|";"|","|"!"|":") {
-	Log("L: Found " << yytext[0]);
+	LogVerbose("L: Found " << yytext[0]);
 
 	allow_unary = true;
 	return yytext[0];
 }
 
 ("/"|"*"|"%") {
-	Log("L: Found " << yytext[0]);
+	LogVerbose("L: Found " << yytext[0]);
 
 	allow_unary = true;
 	return yytext[0];
@@ -85,12 +86,12 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 "-" {
 	if (allow_unary) {
-		Log("L: Found unary minus");
+		LogVerbose("L: Found unary minus");
 
 		allow_unary = false;
 		return U_MINUS;
 	} else {
-		Log("L: Found minus");
+		LogVerbose("L: Found minus");
 
 		return yytext[0];
 	}
@@ -98,169 +99,169 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 "+" {
 	if (allow_unary) {
-		Log("L: Found unary plus");
+		LogVerbose("L: Found unary plus");
 
 		allow_unary = false;
 		return U_PLUS;
 	} else {
-		Log("L: Found plus");
+		LogVerbose("L: Found plus");
 
 		return yytext[0];
 	}
 }
 
 "const" {
-	Log("L: Found \"const\"");
+	LogVerbose("L: Found \"const\"");
 
 	return CONST;
 }
 
 "static" {
-	Log("L: Found \"static\"");
+	LogVerbose("L: Found \"static\"");
 
 	return STATIC;
 }
 
 "void" {
-	Log("L: Found \"void\"");
+	LogVerbose("L: Found \"void\"");
 
 	return VOID;
 }
 
 "bool" {
-	Log("L: Found \"bool\"");
+	LogVerbose("L: Found \"bool\"");
 
 	return BOOL;
 }
 
 "uint8" {
-	Log("L: Found \"uint8\"");
+	LogVerbose("L: Found \"uint8\"");
 
 	return UINT8;
 }
 
 "uint16" {
-	Log("L: Found \"uint16\"");
+	LogVerbose("L: Found \"uint16\"");
 
 	return UINT16;
 }
 
 "uint32" {
-	Log("L: Found \"uint32\"");
+	LogVerbose("L: Found \"uint32\"");
 
 	return UINT32;
 }
 
 "string" {
-	Log("L: Found \"string\"");
+	LogVerbose("L: Found \"string\"");
 
 	return STRING;
 }
 
 "if" {
-	Log("L: Found \"if\"");
+	LogVerbose("L: Found \"if\"");
 
 	return IF;
 }
 
 "else" {
-	Log("L: Found \"else\"");
+	LogVerbose("L: Found \"else\"");
 
 	return ELSE;
 }
 
 "return" {
-	Log("L: Found \"return\"");
+	LogVerbose("L: Found \"return\"");
 
 	return RETURN;
 }
 
 "do" {
-	Log("L: Found \"do\"");
+	LogVerbose("L: Found \"do\"");
 
 	return DO;
 }
 
 "while" {
-	Log("L: Found \"while\"");
+	LogVerbose("L: Found \"while\"");
 
 	return WHILE;
 }
 
 "for" {
-	Log("L: Found \"for\"");
+	LogVerbose("L: Found \"for\"");
 
 	return FOR;
 }
 
 "goto" {
-	Log("L: Found \"goto\"");
+	LogVerbose("L: Found \"goto\"");
 
 	return GOTO;
 }
 
 "++" {
-	Log("L: Found ++");
+	LogVerbose("L: Found ++");
 
 	return INC_OP;
 }
 
 "--" {
-	Log("L: Found --");
+	LogVerbose("L: Found --");
 
 	return DEC_OP;
 }
 
 "==" {
-	Log("L: Found ==");
+	LogVerbose("L: Found ==");
 
 	return EQUAL;
 }
 
 "!=" {
-	Log("L: Found !=");
+	LogVerbose("L: Found !=");
 
 	return NOT_EQUAL;
 }
 
 ">=" {
-	Log("L: Found >=");
+	LogVerbose("L: Found >=");
 
 	return GREATER_OR_EQUAL;
 }
 
 "<=" {
-	Log("L: Found <=");
+	LogVerbose("L: Found <=");
 
 	return LESS_OR_EQUAL;
 }
 
 "<<" {
-	Log("L: Found <<");
+	LogVerbose("L: Found <<");
 
 	return SHIFT_LEFT;
 }
 
 ">>" {
-	Log("L: Found >>");
+	LogVerbose("L: Found >>");
 
 	return SHIFT_RIGHT;
 }
 
 "&&" {
-	Log("L: Found &&");
+	LogVerbose("L: Found &&");
 
 	return LOG_AND;
 }
 
 "||" {
-	Log("L: Found ||");
+	LogVerbose("L: Found ||");
 
 	return LOG_OR;
 }
 
 {INTEGER} {
-	Log("L: Found integer constant \"" << yytext << "\"");
+	LogVerbose("L: Found integer constant \"" << yytext << "\"");
 
 	yylval.expression.value = _strdup(yytext);
 	yylval.expression.expression_type = ExpressionType::Constant;
@@ -279,7 +280,7 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 }
 
 {BOOL_TRUE} {
-	Log("L: Found bool constant \"true\"");
+	LogVerbose("L: Found bool constant \"true\"");
 
 	yylval.expression.value = _strdup("1");
 	yylval.expression.expression_type = ExpressionType::Constant;
@@ -289,7 +290,7 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 }
 
 {BOOL_FALSE} {
-	Log("L: Found bool constant \"false\"");
+	LogVerbose("L: Found bool constant \"false\"");
 
 	yylval.expression.value = _strdup("0");
 	yylval.expression.expression_type = ExpressionType::Constant;
@@ -298,8 +299,22 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 	return CONSTANT;
 }
 
+{STRING} {
+	LogVerbose("L: Found string constant \"" << yytext << "\"");
+
+	char* value = new char[yyleng - 1];
+	memcpy(value, yytext + 1, yyleng - 2);
+	value[yyleng - 2] = '\0';
+
+	yylval.expression.value = value;
+	yylval.expression.expression_type = ExpressionType::Constant;
+    yylval.expression.type = SymbolType::String;
+
+	return CONSTANT;
+}
+
 {IDENTIFIER} {
-	Log("L: Found identifier \"" << yytext << "\"");
+	LogVerbose("L: Found identifier \"" << yytext << "\"");
 
 	yylval.string = _strdup(yytext);
 	allow_unary = false;
