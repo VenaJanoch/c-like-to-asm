@@ -5,6 +5,8 @@
 #include <malloc.h>
 #include <string>
 
+#include "DosExeEmitter.h"
+
 // Internal Bison functions and variables
 extern int yylex();
 extern int yyparse();
@@ -89,7 +91,18 @@ int Compiler::OnRun(int argc, wchar_t* argv[])
 
         // Parsing was successful, generate output files
         {
+            DosExeEmitter emitter(this);
+            emitter.EmitMzHeader();
 
+            Log("Compiling intermediate code to x86 instructions...");
+
+            emitter.EmitInstructions(instruction_stream_head, symbol_table);
+            emitter.EmitSharedFunctions(symbol_table);
+            emitter.EmitStaticData();
+
+            emitter.Save(outputExe);
+
+            CreateDebugOutput(outputAsm);
         }
 
         Log("Done!");
@@ -201,6 +214,28 @@ void Compiler::CreateDebugOutput(FILE* output_file)
             ip++;
         }
     }
+}
+
+void Compiler::ParseCompilerDirective(char* directive)
+{
+    int32_t name_length = 0;
+    char* param = directive;
+    while (*param && *param != ' ') {
+        param++;
+        name_length++;
+    }
+
+    if (*param == ' ') {
+        param++;
+
+        // Parameter provided
+        if (memcmp(directive, "#stack", 6) == 0) {
+            stack_size = atoi(param);
+            return;
+        }
+    }
+
+    Log("Compiler directive \"" << directive << "\" cannot be resolved");
 }
 
 InstructionEntry* Compiler::AddToStream(InstructionType type, char* code)

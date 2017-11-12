@@ -150,6 +150,7 @@
   <ItemGroup>
     <ClInclude Include="Compiler.h" />
     <ClInclude Include="CompilerException.h" />
+    <ClInclude Include="DosExeEmitter.h" />
     <ClInclude Include="InstructionEntry.h" />
     <ClInclude Include="parser.tab.h" />
     <ClInclude Include="SymbolTableEntry.h" />
@@ -157,6 +158,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Compiler.cpp" />
+    <ClCompile Include="DosExeEmitter.cpp" />
     <ClCompile Include="lexer.flex.cpp" />
     <ClCompile Include="parser.tab.cpp" />
   </ItemGroup>

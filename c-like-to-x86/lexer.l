@@ -28,7 +28,7 @@ WHITESPACE (" "|\t)
 LINE_COMMENT ("//".*{NEWLINE})
 BLOCK_COMMENT ("/*".*"*/")
 
-PREPROCESSOR ("#".*{NEWLINE})
+DIRECTIVE ("#".*{NEWLINE})
 
 INTEGER (0|[1-9][0-9]*)
 BOOL_TRUE true
@@ -51,9 +51,10 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 	// Ignore comments
 }
 
-{PREPROCESSOR} {
-	// ToDo
-	Log("L: Found preprocessor directive");
+{DIRECTIVE} {
+	LogVerbose("L: Found preprocessor directive \"" << yytext << "\"");
+
+	c.ParseCompilerDirective(yytext);
 }
 
 ^"-" {

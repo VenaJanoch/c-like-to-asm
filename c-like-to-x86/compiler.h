@@ -107,6 +107,8 @@ public:
     void CreateDebugOutput(FILE* output_file);
 
 
+    void ParseCompilerDirective(char* directive);
+
     InstructionEntry* AddToStream(InstructionType type, char* code);
     BackpatchList* AddToStreamWithBackpatch(InstructionType type, char* code);
     void BackpatchStream(BackpatchList* list, int32_t new_ip);
@@ -182,6 +184,8 @@ private:
     uint32_t var_count_uint8 = 0;
     uint32_t var_count_uint16 = 0;
     uint32_t var_count_uint32 = 0;
+
+    uint32_t stack_size = 0;
 
 };
 
