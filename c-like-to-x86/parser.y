@@ -724,55 +724,6 @@ expression
             c.BackpatchStream($1.false_list, $3.ip);
             $$.false_list = $4.false_list;
             $$.type = SymbolType::Bool;
-
-			// ToDo
-			/*printf("P: Processing logical or.\n");
-			if ($1.type != SymbolType::Bool) {
-				if($1.type != SymbolType::Int && $1.type != SymbolType::ST_REAL){
-					printf("ERROR: Only Bool, Int and Float allowed in logical expressions!\n");
-					yyerror();
-				}
-				char* var = nextBoolVar();
-				//sprintf(output_buffer,"%s = FALSE",var);
-				//AddToStream(output_buffer);
-				sprintf(output_buffer,"IF (%s = 0) GOTO",$1.value);
-				$1.false_list = AddToStreamWithBackpatch(nullptr, output_buffer);
-				//sprintf(output_buffer,"%s = TRUE",var);
-				//AddToStream(output_buffer);
-				sprintf(output_buffer,"GOTO",$1.value);
-				$1.true_list = AddToStreamWithBackpatch(nullptr, output_buffer);
-				delete $1.value;
-				$1.value = var;
-				$1.type = SymbolType::Bool;
-				$1.expression_type = ExpressionType::Variable;
-				$3.quad = NextIp();
-			}
-			if ($4.type != SymbolType::Bool) {
-				if ($4.type != SymbolType::Int && $4.type != SymbolType::ST_REAL) {
-					printf("ERROR: Only Bool, Int and Float allowed in logical expressions!\n");
-					yyerror();
-				}
-				$3.quad = NextIp();
-				char* var = nextBoolVar();
-				//sprintf(output_buffer,"%s = FALSE",var);
-				//AddToStream(output_buffer);
-				sprintf(output_buffer,"IF (%s = 0) GOTO",$4.value);
-				$4.false_list = AddToStreamWithBackpatch(NULL,AddToStream(output_buffer));
-				//sprintf(output_buffer,"%s = TRUE",var);
-				//AddToStream(output_buffer);
-				sprintf(output_buffer,"GOTO",$4.value);
-				$4.true_list = AddToStreamWithBackpatch(NULL,AddToStream(output_buffer));
-				delete $4.value;
-				$4.value = var;
-				$4.type = SymbolType::Bool;
-				$4.expression_type = ExpressionType::Variable;
-			}
-			BackpatchStream($1.false_list,$3.quad);
-			//$$.type = SymbolType::Bool;
-			$$.true_list = mergelists($1.true_list,$4.true_list);
-			$$.false_list = $4.false_list;
-			printf("P: Done processing logical or.\n");
-			*/
 	    }
     | expression LOG_AND marker expression
 		{
@@ -796,56 +747,6 @@ expression
 			c.BackpatchStream($1.true_list, $3.ip);
 			$$.true_list = $4.true_list;
 			$$.type = SymbolType::Bool;
-
-			// ToDo
-			/*
-			printf("P: Processing logical and.\n");
-			if ($1.type != SymbolType::Bool) {
-				if ($1.type != SymbolType::Int && $1.type != SymbolType::ST_REAL) {
-					printf("ERROR: Only Bool, Int and Float allowed in logical expressions!\n");
-					yyerror();
-				}
-				char* var = nextBoolVar();
-				//sprintf(output_buffer,"%s = FALSE",var);
-				//AddToStream(output_buffer);
-				sprintf(output_buffer,"IF (%s = 0) GOTO",$1.value);
-				$1.false_list = AddToStreamWithBackpatch(NULL,AddToStream(output_buffer));
-				//sprintf(output_buffer,"%s = TRUE",var);
-				//AddToStream(output_buffer);
-				sprintf(output_buffer,"GOTO",$1.value);
-				$1.true_list = AddToStreamWithBackpatch(NULL,AddToStream(output_buffer));
-				delete $1.value;
-				$1.value = var;
-				$1.type = SymbolType::Bool;
-				$1.expression_type = ExpressionType::Variable;
-				$3.quad = NextIp();
-			}
-			if ($4.type != SymbolType::Bool) {
-				if ($4.type != SymbolType::Int && $4.type != SymbolType::ST_REAL) {
-					printf("ERROR: Only Bool, Int and Float allowed in logical expressions!\n");
-					yyerror();
-				}
-				$3.quad = NextIp();
-				char* var = nextBoolVar();
-				//sprintf(output_buffer,"%s = FALSE",var);
-				//AddToStream(output_buffer);
-				sprintf(output_buffer,"IF (%s = 0) GOTO",$4.value);
-				$4.false_list = AddToStreamWithBackpatch(nullptr, output_buffer);
-				//sprintf(output_buffer,"%s = TRUE",var);
-				//AddToStream(output_buffer);
-				sprintf(output_buffer,"GOTO",$4.value);
-				$4.true_list = AddToStreamWithBackpatch(nullptr, output_buffer);
-				delete $4.value;
-				$4.value = var;
-				$4.type = SymbolType::Bool;
-				$4.expression_type = C_VARIABLE;
-			}
-			BackpatchStream($1.true_list,$3.quad);
-			//$$.type = SymbolType::Bool;
-			$$.false_list = mergelists($1.false_list,$4.false_list);
-			$$.true_list = $4.true_list;
-			printf("P: Done processing logical and.\n");
-			*/
 		}
     | expression NOT_EQUAL expression
         {

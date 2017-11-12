@@ -9,7 +9,9 @@ enum struct CompilerExceptionSource
 
     Syntax,
     Declaration,
-    Statement
+    Statement,
+
+    Compilation
 };
 
 class CompilerException : public std::exception

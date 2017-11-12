@@ -9,11 +9,12 @@ enum struct SymbolType {
     Unknown,
     None,
 
-    Label,
+    Function,
+    FunctionPrototype,
+    EntryPoint,
+    SharedFunction,
 
-	Function,
-	FunctionPrototype,
-	EntryPoint,
+    Label,
 
     Bool,
     Uint8,
@@ -39,10 +40,10 @@ enum struct ReturnSymbolType {
 };
 
 enum struct ExpressionType {
-	None,
+    None,
 
-	Constant,
-	Variable,
+    Constant,
+    Variable,
 };
 
 struct SymbolTableEntry {

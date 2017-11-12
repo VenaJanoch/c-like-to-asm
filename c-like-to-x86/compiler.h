@@ -20,14 +20,14 @@
 
 // Defines to shorten the code
 #define TypeIsValid(type)                                                       \
-    (type == SymbolType::Uint8  ||  type == SymbolType::Uint16 ||               \
-     type == SymbolType::Uint32 ||  type == SymbolType::Bool)
+    (type == SymbolType::Uint8  || type == SymbolType::Uint16 ||                \
+     type == SymbolType::Uint32 || type == SymbolType::Bool   ||                \
+     type == SymbolType::String)
 
 #define CheckTypeIsValid(type, loc)                                             \
-    if (type != SymbolType::Uint8  &&                                           \
-        type != SymbolType::Uint16 &&                                           \
-        type != SymbolType::Uint32 &&                                           \
-        type != SymbolType::Bool) {                                             \
+    if (type != SymbolType::Uint8  && type != SymbolType::Uint16 &&             \
+        type != SymbolType::Uint32 && type != SymbolType::Bool   &&             \
+        type != SymbolType::String) {                                           \
         throw CompilerException(CompilerExceptionSource::Statement,             \
             "Specified type is not allowed", loc.first_line, loc.first_column); \
     }  
@@ -55,41 +55,45 @@
             message, loc.first_line, loc.first_column);                     \
     }
 
-#define FillInstructionForAssign(i, assign_type, dst, op1, op2)             \
+#define FillInstructionForAssign(i, assign_type, dst, op1_, op2_)           \
     {                                                                       \
         i->assignment.type = assign_type;                                   \
-        i->assignment.dst_value = dst->name;                               \
-        i->assignment.op1_value = op1.value;                                \
-        i->assignment.op1_type = op1.type;                                  \
-        i->assignment.op1_exp_type = op1.expression_type;                   \
-        i->assignment.op2_value = op2.value;                                \
-        i->assignment.op2_type = op2.type;                                  \
-        i->assignment.op2_exp_type = op2.expression_type;                   \
+        i->assignment.dst_value = dst->name;                                \
+        i->assignment.op1.value = op1_.value;                               \
+        i->assignment.op1.type = op1_.type;                                 \
+        i->assignment.op1.exp_type = op1_.expression_type;                  \
+        i->assignment.op2.value = op2_.value;                               \
+        i->assignment.op2.type = op2_.type;                                 \
+        i->assignment.op2.exp_type = op2_.expression_type;                  \
     }
 
-#define CreateIfWithBackpatch(backpatch, compare_type, op1, op2)            \
+#define CreateIfWithBackpatch(backpatch, compare_type, op1_, op2_)          \
     {                                                                       \
         backpatch = c.AddToStreamWithBackpatch(InstructionType::If, output_buffer); \
         backpatch->entry->if_statement.type = compare_type;                 \
-        backpatch->entry->if_statement.op1_value = op1.value;               \
-        backpatch->entry->if_statement.op1_type = op1.type;                 \
-        backpatch->entry->if_statement.op1_exp_type = op1.expression_type;  \
-        backpatch->entry->if_statement.op2_value = op2.value;               \
-        backpatch->entry->if_statement.op2_type = op2.type;                 \
-        backpatch->entry->if_statement.op2_exp_type = op2.expression_type;  \
+        backpatch->entry->if_statement.op1.value = op1_.value;              \
+        backpatch->entry->if_statement.op1.type = op1_.type;                \
+        backpatch->entry->if_statement.op1.exp_type = op1_.expression_type; \
+        backpatch->entry->if_statement.op2.value = op2_.value;              \
+        backpatch->entry->if_statement.op2.type = op2_.type;                \
+        backpatch->entry->if_statement.op2.exp_type = op2_.expression_type; \
     }
 
-#define CreateIfConstWithBackpatch(backpatch, compare_type, op1, constant)  \
-    {                                                                       \
+#define CreateIfConstWithBackpatch(backpatch, compare_type, op1_, constant)     \
+    {                                                                           \
         backpatch = c.AddToStreamWithBackpatch(InstructionType::If, output_buffer); \
-        backpatch->entry->if_statement.type = compare_type;                 \
-        backpatch->entry->if_statement.op1_value = op1.value;               \
-        backpatch->entry->if_statement.op1_type = op1.type;                 \
-        backpatch->entry->if_statement.op1_exp_type = op1.expression_type;  \
-        backpatch->entry->if_statement.op2_value = constant;                \
-        backpatch->entry->if_statement.op2_type = op1.type;                 \
-        backpatch->entry->if_statement.op2_exp_type = ExpressionType::Constant; \
+        backpatch->entry->if_statement.type = compare_type;                     \
+        backpatch->entry->if_statement.op1.value = op1_.value;                  \
+        backpatch->entry->if_statement.op1.type = op1_.type;                    \
+        backpatch->entry->if_statement.op1.exp_type = op1_.expression_type;     \
+        backpatch->entry->if_statement.op2.value = constant;                    \
+        backpatch->entry->if_statement.op2.type = op1_.type;                    \
+        backpatch->entry->if_statement.op2.exp_type = ExpressionType::Constant; \
     }
+
+#define ThrowOnUnreachableCode()    \
+    __debugbreak();                 \
+    throw CompilerException(CompilerExceptionSource::Unknown, "Internal Error");
 
 
 class Compiler
@@ -100,26 +104,27 @@ public:
 
     int OnRun(int argc, wchar_t *argv[]);
 
-	void CreateDebugOutput(FILE* output_file);
+    void CreateDebugOutput(FILE* output_file);
+
 
     InstructionEntry* AddToStream(InstructionType type, char* code);
     BackpatchList* AddToStreamWithBackpatch(InstructionType type, char* code);
     void BackpatchStream(BackpatchList* list, int32_t new_ip);
 
-	SymbolTableEntry* ToDeclarationList(SymbolType type, const char* name, ExpressionType expression_type);
-	void ToParameterList(SymbolType type, const char* name);
-	SymbolTableEntry* ToCallParameterList(SymbolTableEntry* queue, SymbolType type, const char* name, ExpressionType expression_type);
+
+    SymbolTableEntry* ToDeclarationList(SymbolType type, const char* name, ExpressionType expression_type);
+    void ToParameterList(SymbolType type, const char* name);
+    SymbolTableEntry* ToCallParameterList(SymbolTableEntry* queue, SymbolType type, const char* name, ExpressionType expression_type);
 
     void AddLabel(const char* name, int32_t ip);
     void AddStaticVariable(SymbolType type, const char* name);
-	void AddFunction(char* name, ReturnSymbolType return_type);
-	void AddFunctionPrototype(char* name, ReturnSymbolType return_type);
+    void AddFunction(char* name, ReturnSymbolType return_type);
+    void AddFunctionPrototype(char* name, ReturnSymbolType return_type);
 
-	void PrepareForCall(const char* name, SymbolTableEntry* call_parameters, int32_t parameter_count);
+    void PrepareForCall(const char* name, SymbolTableEntry* call_parameters, int32_t parameter_count);
 
-
-	SymbolTableEntry* GetParameter(const char* name);
-	SymbolTableEntry* GetFunction(const char* name);
+    SymbolTableEntry* GetParameter(const char* name);
+    SymbolTableEntry* GetFunction(const char* name);
 
     /// <summary>
     /// Find symbol by name in table
@@ -128,9 +133,9 @@ public:
     /// <returns>Symbol entry</returns>
     SymbolTableEntry* FindSymbolByName(const char* name);
 
-	bool CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type);
+    bool CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type);
 
-	SymbolType GetLargestTypeForArithmetic(SymbolType a, SymbolType b);
+    SymbolType GetLargestTypeForArithmetic(SymbolType a, SymbolType b);
 
     /// <summary>
     /// Get next abstract instruction pointer (index)
@@ -141,18 +146,24 @@ public:
     SymbolTableEntry* GetUnusedVariable(SymbolType type);
 
     int32_t GetSymbolTypeSize(SymbolType type);
-	void ReleaseDeclarationQueue();
-
     int32_t GetReturnSymbolTypeSize(ReturnSymbolType type);
 
 private:
     SymbolTableEntry* AddSymbol(const char* name, SymbolType type, ReturnSymbolType return_type,
         ExpressionType expression_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent);
 
-	const char* SymbolTypeToString(SymbolType type);
-	const char* ReturnSymbolTypeToString(ReturnSymbolType type);
-	const char* ExpressionTypeToString(ExpressionType type);
+    const char* SymbolTypeToString(SymbolType type);
+    const char* ReturnSymbolTypeToString(ReturnSymbolType type);
+    const char* ExpressionTypeToString(ExpressionType type);
 
+    void ReleaseDeclarationQueue();
+
+    void SortSymbolTable();
+
+    /// <summary>
+    /// Declare all shared functions, so they can be eventually called
+    /// </summary>
+    void DeclareSharedFunctions();
 
     InstructionEntry* instruction_stream_head = nullptr;
     InstructionEntry* instruction_stream_tail = nullptr;
