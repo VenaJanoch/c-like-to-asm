@@ -2,6 +2,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
 
 #include "Compiler.h"
 
@@ -13,12 +15,16 @@ extern FILE* yyin;
 extern int yylineno;
 extern char* yytext;
 
-Compiler compiler;
+char output_buffer[64];
+
+Compiler c;
 
 %}
 
 %locations
 %define parse.error verbose
+//%define parse.lac full
+//%define parse.trace
 
 %token CONST STATIC VOID BOOL UINT8 UINT16 UINT32 STRING CONSTANT IDENTIFIER
 %token IF ELSE RETURN DO WHILE FOR GOTO
@@ -82,6 +88,13 @@ Compiler compiler;
 program_head
     : program
 		{
+			SymbolTableEntry* entry_point = c.FindSymbolByName(EntryPointName);
+			if (!entry_point) {
+				throw CompilerException(CompilerExceptionSource::Declaration,
+					"Entry point not found");
+			}
+
+			c.BackpatchStream($1.next_list, entry_point->ip + 1);
 		}
     ;
 
@@ -90,11 +103,15 @@ program
         {
             Log("P: Processing single function");
 
+			$$.next_list = $1.next_list;
+            c.BackpatchStream($2.next_list, c.NextIp());
         }
     | program function
         {
             Log("P: Processing function in function list");
 
+			$$.next_list = $1.next_list;
+            c.BackpatchStream($2.next_list, c.NextIp());
         }
     ;
 
@@ -103,14 +120,14 @@ program
 function
     : return_type id '(' parameter_list ')' ';'
         {
-			c.AddFunctionPrototype($2, $1);
+            c.AddFunctionPrototype($2, $1);
 
 			// Nothing to backpatch here...
             $$.next_list = nullptr;
         }
     | return_type id '(' parameter_list ')' function_body
         {
-			c.AddFunction($2, $1);
+            c.AddFunction($2, $1);
             $$.next_list = $6.next_list;
         }
 	| static_declaration_list
@@ -125,20 +142,20 @@ function_body
         {
             Log("P: Found function body");
 
-			$$.next_list = $2.next_list;
+            $$.next_list = $2.next_list;
         }
     ;
 
 parameter_list
     : declaration_type id
         {
-			c.ToParameterList($1, $2);
+            c.ToParameterList($1, $2);
 
             Log("P: Found parameter");
         }
     | parameter_list ',' declaration_type id
         {
-			c.ToParameterList($3, $4);
+            c.ToParameterList($3, $4);
 
             Log("P: Found parameter list (end)");
         }
@@ -226,13 +243,14 @@ return_type
         }
     ;
 
-	// Statements
+
+// Statements
 statement_list
     : statement
         {
 			Log("P: Processing single statement in list statement list");
 
-			$$.next_list = $1.next_list;
+            $$.next_list = $1.next_list;
         }
     | statement_list marker statement
         {
@@ -288,11 +306,13 @@ matched_statement
         {
 			Log("P: Processing matched assignment");
 
-			// Nothing to backpatch here...
+			//c.BackpatchStream($1.true_list, 1);
+			//c.BackpatchStream($1.false_list, 0);
 			$$.next_list = nullptr;
 		}
     | RETURN ';'
         {
+			// ToDo: Check return type, maybe true_list/false_list
 			Log("P: Processing void return");
 
 			$$.next_list = nullptr;
@@ -302,6 +322,8 @@ matched_statement
         }
     | RETURN assignment ';'
         {
+			// ToDo: Check return type, maybe true_list/false_list
+
 			Log("P: Processing value return");
 
 			$$.next_list = nullptr;
@@ -355,6 +377,8 @@ matched_statement
 			sprintf_s(output_buffer, "goto %s", $2);
 			InstructionEntry* i = c.AddToStream(InstructionType::GotoLabel, output_buffer);
 			i->goto_label_statement.label = $2;
+			// ToDo
+			//i->goto_label_statement.symbol = ...;
 		}
     | '{' statement_list '}'
         {
@@ -594,12 +618,13 @@ assignment_with_declaration
             $$.value = $2;
         }
     ;
+
 expression
     : INC_OP expression
         {
 			Log("P: Processing increment");
 
-						CheckIsInt($2, "Specified type is not allowed in arithmetic operations", @1);
+			CheckIsInt($2, "Specified type is not allowed in arithmetic operations", @1);
 
 			SymbolTableEntry* decl;
 
@@ -679,7 +704,7 @@ expression
         }
     | expression LOG_OR marker expression
         {
-			if (SymbolType::Bool != $1.type) {
+            if (SymbolType::Bool != $1.type) {
                 sprintf_s(output_buffer, "if (%s != 0) goto", $1.value);
                 CreateIfConstWithBackpatch($1.true_list, CompareType::NotEqual, $1, "0");
                 
@@ -699,6 +724,55 @@ expression
             c.BackpatchStream($1.false_list, $3.ip);
             $$.false_list = $4.false_list;
             $$.type = SymbolType::Bool;
+
+			// ToDo
+			/*printf("P: Processing logical or.\n");
+			if ($1.type != SymbolType::Bool) {
+				if($1.type != SymbolType::Int && $1.type != SymbolType::ST_REAL){
+					printf("ERROR: Only Bool, Int and Float allowed in logical expressions!\n");
+					yyerror();
+				}
+				char* var = nextBoolVar();
+				//sprintf(output_buffer,"%s = FALSE",var);
+				//AddToStream(output_buffer);
+				sprintf(output_buffer,"IF (%s = 0) GOTO",$1.value);
+				$1.false_list = AddToStreamWithBackpatch(nullptr, output_buffer);
+				//sprintf(output_buffer,"%s = TRUE",var);
+				//AddToStream(output_buffer);
+				sprintf(output_buffer,"GOTO",$1.value);
+				$1.true_list = AddToStreamWithBackpatch(nullptr, output_buffer);
+				delete $1.value;
+				$1.value = var;
+				$1.type = SymbolType::Bool;
+				$1.expression_type = ExpressionType::Variable;
+				$3.quad = NextIp();
+			}
+			if ($4.type != SymbolType::Bool) {
+				if ($4.type != SymbolType::Int && $4.type != SymbolType::ST_REAL) {
+					printf("ERROR: Only Bool, Int and Float allowed in logical expressions!\n");
+					yyerror();
+				}
+				$3.quad = NextIp();
+				char* var = nextBoolVar();
+				//sprintf(output_buffer,"%s = FALSE",var);
+				//AddToStream(output_buffer);
+				sprintf(output_buffer,"IF (%s = 0) GOTO",$4.value);
+				$4.false_list = AddToStreamWithBackpatch(NULL,AddToStream(output_buffer));
+				//sprintf(output_buffer,"%s = TRUE",var);
+				//AddToStream(output_buffer);
+				sprintf(output_buffer,"GOTO",$4.value);
+				$4.true_list = AddToStreamWithBackpatch(NULL,AddToStream(output_buffer));
+				delete $4.value;
+				$4.value = var;
+				$4.type = SymbolType::Bool;
+				$4.expression_type = ExpressionType::Variable;
+			}
+			BackpatchStream($1.false_list,$3.quad);
+			//$$.type = SymbolType::Bool;
+			$$.true_list = mergelists($1.true_list,$4.true_list);
+			$$.false_list = $4.false_list;
+			printf("P: Done processing logical or.\n");
+			*/
 	    }
     | expression LOG_AND marker expression
 		{
@@ -722,6 +796,56 @@ expression
 			c.BackpatchStream($1.true_list, $3.ip);
 			$$.true_list = $4.true_list;
 			$$.type = SymbolType::Bool;
+
+			// ToDo
+			/*
+			printf("P: Processing logical and.\n");
+			if ($1.type != SymbolType::Bool) {
+				if ($1.type != SymbolType::Int && $1.type != SymbolType::ST_REAL) {
+					printf("ERROR: Only Bool, Int and Float allowed in logical expressions!\n");
+					yyerror();
+				}
+				char* var = nextBoolVar();
+				//sprintf(output_buffer,"%s = FALSE",var);
+				//AddToStream(output_buffer);
+				sprintf(output_buffer,"IF (%s = 0) GOTO",$1.value);
+				$1.false_list = AddToStreamWithBackpatch(NULL,AddToStream(output_buffer));
+				//sprintf(output_buffer,"%s = TRUE",var);
+				//AddToStream(output_buffer);
+				sprintf(output_buffer,"GOTO",$1.value);
+				$1.true_list = AddToStreamWithBackpatch(NULL,AddToStream(output_buffer));
+				delete $1.value;
+				$1.value = var;
+				$1.type = SymbolType::Bool;
+				$1.expression_type = ExpressionType::Variable;
+				$3.quad = NextIp();
+			}
+			if ($4.type != SymbolType::Bool) {
+				if ($4.type != SymbolType::Int && $4.type != SymbolType::ST_REAL) {
+					printf("ERROR: Only Bool, Int and Float allowed in logical expressions!\n");
+					yyerror();
+				}
+				$3.quad = NextIp();
+				char* var = nextBoolVar();
+				//sprintf(output_buffer,"%s = FALSE",var);
+				//AddToStream(output_buffer);
+				sprintf(output_buffer,"IF (%s = 0) GOTO",$4.value);
+				$4.false_list = AddToStreamWithBackpatch(nullptr, output_buffer);
+				//sprintf(output_buffer,"%s = TRUE",var);
+				//AddToStream(output_buffer);
+				sprintf(output_buffer,"GOTO",$4.value);
+				$4.true_list = AddToStreamWithBackpatch(nullptr, output_buffer);
+				delete $4.value;
+				$4.value = var;
+				$4.type = SymbolType::Bool;
+				$4.expression_type = C_VARIABLE;
+			}
+			BackpatchStream($1.true_list,$3.quad);
+			//$$.type = SymbolType::Bool;
+			$$.false_list = mergelists($1.false_list,$4.false_list);
+			$$.true_list = $4.true_list;
+			printf("P: Done processing logical and.\n");
+			*/
 		}
     | expression NOT_EQUAL expression
         {
@@ -736,6 +860,8 @@ expression
 			sprintf_s(output_buffer, "goto");
 			$$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
+
+			$$.value = "TrueFalse Only!";
 			$$.type = SymbolType::Bool;
 			$$.expression_type = ExpressionType::None;
         }
@@ -752,15 +878,15 @@ expression
 			sprintf_s(output_buffer, "goto");
 			$$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-			if ($1.type == SymbolType::Bool) {
+			if($1.type == SymbolType::Bool) {
 				$$.true_list = MergeLists($$.true_list, $1.true_list);
 				$$.false_list = MergeLists($$.false_list, $1.false_list);
 			}
-			if ($3.type == SymbolType::Bool) {
+			if($3.type == SymbolType::Bool) {
 				$$.true_list = MergeLists($$.true_list, $3.true_list);
 				$$.false_list = MergeLists($$.false_list, $3.false_list);
 			}
-
+			$$.value = "TrueFalse Only!";
 			$$.type = SymbolType::Bool;
 			$$.expression_type = ExpressionType::None;
         }
@@ -839,6 +965,18 @@ expression
 
 			CheckIsInt($1, "Only integer types are allowed in shift operations", @1);
 			CheckIsInt($3, "Only integer types are allowed in shift operations", @3);
+
+			SymbolTableEntry* decl = c.GetUnusedVariable($1.type);
+
+            sprintf_s(output_buffer, "%s = %s << %s", decl->name, $1.value, $3.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			FillInstructionForAssign(i, AssignType::ShiftLeft, decl, $1, $3);
+
+            $$.value = decl->name;
+            $$.type = $1.type;
+            $$.expression_type = ExpressionType::Variable;
+			$$.true_list = nullptr;
+			$$.false_list = nullptr;
         }
 	| expression SHIFT_RIGHT expression
         {
@@ -846,6 +984,18 @@ expression
 
 			CheckIsInt($1, "Only integer types are allowed in shift operations", @1);
 			CheckIsInt($3, "Only integer types are allowed in shift operations", @3);
+	    
+            SymbolTableEntry* decl = c.GetUnusedVariable($1.type);
+
+            sprintf_s(output_buffer, "%s = %s >> %s", decl->name, $1.value, $3.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			FillInstructionForAssign(i, AssignType::ShiftRight, decl, $1, $3);
+
+            $$.value = decl->name;
+            $$.type = $1.type;
+            $$.expression_type = ExpressionType::Variable;
+			$$.true_list = nullptr;
+			$$.false_list = nullptr;
         }
     | expression '+' expression
         {
@@ -980,14 +1130,13 @@ expression
         {
 			CheckIsInt($2, "Unary operator is not allowed in this context", @1);
 
-			$$ = $2;
+            $$ = $2;
         }
     | U_MINUS expression
         {
 			CheckIsInt($2, "Unary operator is not allowed in this context", @1);
 
 			SymbolTableEntry* decl = c.GetUnusedVariable($2.type);
-			decl->expression_type = $2.expression_type;
 
 			sprintf_s(output_buffer, "%s = -%s", decl->name, $2.value);
 			InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
@@ -999,14 +1148,12 @@ expression
 
 			$$ = $2;
 			$$.value = decl->name;
-			$$.expression_type = ExpressionType::Variable;
        }
     | CONSTANT
         {
 			Log("P: Processing constant");
 
-			$$.value = _strdup($1.value);
-			$$.expression_type = ExpressionType::Constant;
+            $$.value = _strdup($1.value);
             $$.true_list = nullptr;
 			$$.false_list = nullptr;
         }
@@ -1066,7 +1213,7 @@ expression
         {
 			Log("P: Processing function call");
 
-			SymbolTableEntry* func = c.GetFunction($1);
+            SymbolTableEntry* func = c.GetFunction($1);
             if (!func || func->return_type == ReturnSymbolType::Unknown) {
 				std::string message = "Function \"";
 				message += $1;
@@ -1151,9 +1298,9 @@ call_parameter_list
 // Goto
 // ToDo: Add beginning-of-line only marker?
 goto_label
-	: id ':'
+	: id ':' marker
 		{
-			Log("P: Found goto label \"" << $1 << "\"");
+			Log("P: Found goto label \"" << $1 << "\" (" << $3.ip << ")");
 
 			c.AddLabel($1, $3.ip);
 		}
@@ -1189,9 +1336,9 @@ jump_marker
 
 %%
 
-int __cdecl wmain(int argc, wchar_t *argv[], wchar_t *envp[])
+int __cdecl wmain(int argc, wchar_t* argv[], wchar_t* envp[])
 {
-	return compiler.OnRun(argc, argv);
+	return c.OnRun(argc, argv);
 }
 
 void yyerror(const char* s)
@@ -1209,4 +1356,3 @@ void yyerror(const char* s)
 	throw CompilerException(CompilerExceptionSource::Syntax,
 		s, yylloc.first_line, yylloc.first_column);
 }
-

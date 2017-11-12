@@ -99,6 +99,8 @@ public:
 
     int OnRun(int argc, wchar_t *argv[]);
 
+	void CreateDebugOutput(FILE* output_file);
+
     InstructionEntry* AddToStream(InstructionType type, char* code);
     BackpatchList* AddToStreamWithBackpatch(InstructionType type, char* code);
     void BackpatchStream(BackpatchList* list, int32_t new_ip);
