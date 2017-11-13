@@ -54,11 +54,26 @@ struct MzHeader {
     uint16_t overlay_count;
 };
 
+
 struct MzRelocEntry {
     uint16_t offset;
     uint16_t segment;
 };
 
+
+struct DosVariableDescriptor {
+	SymbolTableEntry* symbol;
+
+	char* value;
+
+	bool is_static;
+	CpuRegister reg;
+	int32_t location;
+
+	uint32_t last_used;
+
+	bool is_dirty;
+};
 #pragma pack(pop)
 
 // Defines to shorten the code
@@ -81,13 +96,31 @@ public:
 
 private:
 
+	void CreateVariableList(SymbolTableEntry* symbol_table);
+
     // Output buffer management
     uint8_t* AllocateBuffer(uint32_t size);
+
+	DosVariableDescriptor* FindVariableByName(char* name);
+
+	void SaveAndUnloadVariable(DosVariableDescriptor* var);
+
+	void SaveAndUnloadAllRegisters();
+
+
+	// Buffer management
+	uint8_t* AllocateBuffer(uint32_t size);
+	uint8_t* AllocateBufferForInstruction(uint32_t size);
 
     template<typename T>
     T* AllocateBuffer();
 
+
+	std::list<DosVariableDescriptor> variables;
+
     Compiler* compiler;
+
+	SymbolTableEntry* parent = nullptr;
 
     uint8_t* buffer = nullptr;
     uint32_t buffer_offset = 0;
