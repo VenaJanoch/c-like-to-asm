@@ -116,6 +116,188 @@ void DosExeEmitter::Save(FILE* stream)
     }
 }
 
+void DosExeEmitter::SaveAndUnloadVariable(DosVariableDescriptor* var)
+{
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
+    switch (var_size) {
+        case 1: {
+            // Register to stack copy (8-bit range)
+            uint8_t* a = AllocateBufferForInstruction(2 + 1);
+            a[0] = 0x88;   // mov rm8, r8
+            a[1] = ToXrm(1, var->reg, 6);
+            a[2] = (int8_t)var->location;
+            break;
+        }
+        case 2: {
+            // Register to stack copy (8-bit range)
+            uint8_t* a = AllocateBufferForInstruction(2 + 1);
+            a[0] = 0x89;   // mov rm16/32, r16/32
+            a[1] = ToXrm(1, var->reg, 6);
+            a[2] = (int8_t)var->location;
+            break;
+        }
+        case 4: {
+            // Stack to register copy (8-bit range)
+            uint8_t* a = AllocateBufferForInstruction(3 + 1);
+            a[0] = 0x66;   // Operand size prefix
+            a[1] = 0x89;   // mov rm16/32, r16/32
+            a[2] = ToXrm(1, var->reg, 6);
+            a[3] = (int8_t)var->location;
+            break;
+        }
+
+        default: ThrowOnUnreachableCode();
+    }
+
+    var->reg = CpuRegister::None;
+    var->is_dirty = false;
+}
+
+void DosExeEmitter::SaveAndUnloadRegister(CpuRegister reg)
+{
+    std::list<DosVariableDescriptor>::iterator it = variables.begin();
+
+    while (it != variables.end()) {
+        if (it->is_dirty && it->reg == reg && it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0) {
+            SaveAndUnloadVariable(&(*it));
+            break;
+        }
+
+        ++it;
+    }
+}
+
+void DosExeEmitter::SaveAndUnloadAllRegisters()
+{
+    std::list<DosVariableDescriptor>::iterator it = variables.begin();
+
+    while (it != variables.end()) {
+        if (it->is_dirty && it->reg != CpuRegister::None && it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0) {
+            SaveAndUnloadVariable(&(*it));
+        }
+
+        ++it;
+    }
+}
+
+void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, SymbolType param_type)
+{
+    int32_t param_size = compiler->GetSymbolTypeSize(param_type);
+
+    if (var->reg != CpuRegister::None) {
+        // Variable is already in register
+        switch (param_size) {
+            case 1: {
+                // Zero high part of register and push it to parameter stack
+                uint8_t* a = AllocateBufferForInstruction(2 + 1);
+                a[0] = 0x32;                       // xor r8, rm8
+                a[1] = ToXrm(3, (uint8_t)var->reg + 4, (uint8_t)var->reg + 4);
+                a[2] = 0x50 + (uint8_t)var->reg;   // push r16
+                break;
+            }
+            case 2: {
+                // Push register to parameter stack
+                uint8_t* a = AllocateBufferForInstruction(1);
+                a[0] = 0x50 + (uint8_t)var->reg;   // push r16
+                break;
+            }
+            case 4: {
+                // Push register to parameter stack
+                uint8_t* a = AllocateBufferForInstruction(2);
+                a[0] = 0x66;                       // Operand size prefix
+                a[1] = 0x50 + (uint8_t)var->reg;   // push r32
+                break;
+            }
+
+            default: ThrowOnUnreachableCode();
+        }
+
+        return;
+    }
+
+    // Variable is only on stack
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
+    if (var_size < param_size) {
+        // Variable expansion is needed
+        CpuRegister reg_tmp = GetUnusedRegister();
+
+        CopyVariableToRegister(var, reg_tmp, param_size);
+
+        switch (param_size) {
+            case 2: {
+                // Push register to parameter stack
+                uint8_t* a = AllocateBufferForInstruction(1);
+                a[0] = 0x50 + (uint8_t)reg_tmp;    // push r16
+                break;
+            }
+            case 4: {
+                // Push register to parameter stack
+                uint8_t* a = AllocateBufferForInstruction(2);
+                a[0] = 0x66;                       // Operand size prefix
+                a[1] = 0x50 + (uint8_t)reg_tmp;    // push r32
+                break;
+            }
+
+            default: ThrowOnUnreachableCode();
+        }
+
+        return;
+    }
+
+    switch (param_size) {
+        case 1: {
+            if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
+                // Stack push using register (16-bit range)
+                ThrowOnUnreachableCode();
+            } else {
+                // Stack push using register (8-bit range)
+                CpuRegister reg_temp = GetUnusedRegister();
+
+                uint8_t* a = AllocateBufferForInstruction(2 + 2 + 1 + 1);
+                // Zero temp. register, because we have to push to stack full 16-bit word
+                a[0] = 0x32;   // xor r8, rm8
+                a[1] = ToXrm(3, (uint8_t)reg_temp + 4, (uint8_t)reg_temp + 4);
+
+                a[2] = 0x8A;   // mov r8, rm8
+                a[3] = ToXrm(1, reg_temp, 6);
+                a[4] = (int8_t)var->location;
+
+                a[5] = 0x50 + (uint8_t)reg_temp;   // push r16
+            }
+            break;
+        }
+        case 2: {
+            if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
+                // Stack push (16-bit range)
+                ThrowOnUnreachableCode();
+            } else {
+                // Stack push (8-bit range)
+                uint8_t* a = AllocateBufferForInstruction(2 + 1);
+                a[0] = 0xFF;   // push rm16
+                a[1] = ToXrm(1, 6, 6);
+                a[2] = (int8_t)var->location;
+            }
+            break;
+        }
+        case 4: {
+            if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
+                // Stack push (16-bit range)
+                ThrowOnUnreachableCode();
+            } else {
+                // Stack push (8-bit range)
+                uint8_t* a = AllocateBufferForInstruction(3 + 1);
+                a[0] = 0x66;   // Operand size prefix
+                a[1] = 0xFF;   // push rm32
+                a[2] = ToXrm(1, 6, 6);
+                a[3] = (int8_t)var->location;
+            }
+            break;
+        }
+
+        default: ThrowOnUnreachableCode();
+    }
+}
+
 uint8_t* DosExeEmitter::AllocateBuffer(uint32_t size)
 {
     if (!buffer) {
@@ -135,60 +317,33 @@ uint8_t* DosExeEmitter::AllocateBuffer(uint32_t size)
     return buffer + prev_offset;
 }
 
+uint8_t* DosExeEmitter::AllocateBuffer(uint32_t size)
+{
+    if (!buffer) {
+        buffer_size = size + 256;
+        buffer = (uint8_t*)malloc(buffer_size);
+        buffer_offset = size;
+        return buffer;
+    }
+
+    if (buffer_size < buffer_offset + size) {
+        buffer_size = buffer_offset + size + 64;
+        buffer = (uint8_t*)realloc(buffer, buffer_size);
+    }
+
+    uint32_t prev_offset = buffer_offset;
+    buffer_offset += size;
+    return buffer + prev_offset;
+}
+
+uint8_t* DosExeEmitter::AllocateBufferForInstruction(uint32_t size)
+{
+    ip_dst += size;
+    return AllocateBuffer(size);
+}
+
 template<typename T>
 T* DosExeEmitter::AllocateBuffer()
 {
     return reinterpret_cast<T*>(AllocateBuffer(sizeof(T)));
-}
-
-
-void DosExeEmitter::SaveAndUnloadVariable(DosVariableDescriptor* var)
-{
-	int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
-	switch (var_size) {
-	case 1: {
-		// Register to stack copy (8-bit range)
-		uint8_t* buffer = AllocateBufferForInstruction(2 + 1);
-		buffer[0] = 0x88;   // mov rm8, r8
-		buffer[1] = ToXrm(1, var->reg, 6);
-		buffer[2] = (int8_t)var->location;
-		break;
-	}
-	case 2: {
-		// Register to stack copy (8-bit range)
-		uint8_t* buffer = AllocateBufferForInstruction(2 + 1);
-		buffer[0] = 0x89;   // mov rm16/32, r16/32
-		buffer[1] = ToXrm(1, var->reg, 6);
-		buffer[2] = (int8_t)var->location;
-		break;
-	}
-	case 4: {
-		// Stack to register copy (8-bit range)
-		uint8_t* buffer = AllocateBufferForInstruction(3 + 1);
-		buffer[0] = 0x66;   // Operand size prefix
-		buffer[1] = 0x89;   // mov rm16/32, r16/32
-		buffer[2] = ToXrm(1, var->reg, 6);
-		buffer[3] = (int8_t)var->location;
-		break;
-	}
-
-	default: throw CompilerException(CompilerExceptionSource::Unknown, "Internal Error");
-	}
-
-	var->reg = CpuRegister::None;
-	var->is_dirty = false;
-}
-
-void DosExeEmitter::SaveAndUnloadAllRegisters()
-{
-	// First four 32-registers are generally usable
-	std::list<DosVariableDescriptor>::iterator it = variables.begin();
-
-	while (it != variables.end()) {
-		if (it->is_dirty && it->reg != CpuRegister::None && it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0) {
-			SaveAndUnloadVariable(&(*it));
-		}
-
-		++it;
-	}
 }

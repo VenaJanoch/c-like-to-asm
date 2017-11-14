@@ -98,29 +98,52 @@ private:
 
 	void CreateVariableList(SymbolTableEntry* symbol_table);
 
+
+
+    /// <summary>
+    /// Save specified variable to stack and unreference its register
+    /// </summary>
+    /// <param name="var"></param>
+    void SaveAndUnloadVariable(DosVariableDescriptor* var);
+
+    /// <summary>
+    /// Save variable which uses specified register and unreference it
+    /// </summary>
+    /// <param name="reg">Register to unreference</param>
+    void SaveAndUnloadRegister(CpuRegister reg);
+
+    /// <summary>
+    /// Save all "dirty" variables to stack and unreference all registers
+    /// </summary>
+    void SaveAndUnloadAllRegisters();
+
+    /// <summary>
+    /// Push value of variable to parameter stack 
+    /// </summary>
+    /// <param name="var">Variable to push</param>
+    /// <param name="param_type">Type of parameter</param>
+    void PushVariableToStack(DosVariableDescriptor* var, SymbolType param_type);
+
+
+
     // Output buffer management
     uint8_t* AllocateBuffer(uint32_t size);
-
-	DosVariableDescriptor* FindVariableByName(char* name);
-
-	void SaveAndUnloadVariable(DosVariableDescriptor* var);
-
-	void SaveAndUnloadAllRegisters();
-
-
-	// Buffer management
-	uint8_t* AllocateBuffer(uint32_t size);
-	uint8_t* AllocateBufferForInstruction(uint32_t size);
+    uint8_t* AllocateBufferForInstruction(uint32_t size);
 
     template<typename T>
     T* AllocateBuffer();
 
 
-	std::list<DosVariableDescriptor> variables;
-
     Compiler* compiler;
 
-	SymbolTableEntry* parent = nullptr;
+    uint32_t ip_src = 0;
+    uint32_t ip_dst = 0;
+
+    std::map<uint32_t, uint32_t> ip_src_to_dst;
+    std::list<DosVariableDescriptor> variables;
+    std::unordered_set<char*> strings;
+
+    SymbolTableEntry* parent = nullptr;
 
     uint8_t* buffer = nullptr;
     uint32_t buffer_offset = 0;
