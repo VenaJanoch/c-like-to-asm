@@ -13,6 +13,18 @@
 #include "InstructionEntry.h"
 #include "SymbolTableEntry.h"
 
+
+struct DosBackpatchInstruction {
+	DosBackpatchType type;
+	DosBackpatchTarget target;
+
+	uint32_t backpatch_offset;
+	uint32_t backpatch_ip;
+
+	int32_t ip_src;
+	char* value;
+};
+
 enum struct CpuRegister {
     None = 0xFF,
 
@@ -98,6 +110,12 @@ private:
 
 	void CreateVariableList(SymbolTableEntry* symbol_table);
 
+	/// <summary>
+	/// Return unused/free register, if all registers are referenced,
+	/// save and unreference least used register
+	/// </summary>
+	/// <returns>Unused register</returns>
+	CpuRegister GetUnusedRegister();
 
 
     /// <summary>
@@ -127,8 +145,8 @@ private:
 
 	void EmitGoto(InstructionEntry* i);
 	void EmitGotoLabel(InstructionEntry* i);
+	void EmitIf(InstructionEntry* i);
 	void EmitPush(InstructionEntry* i, std::stack<InstructionEntry*>& call_parameters);
-
 
     // Output buffer management
     uint8_t* AllocateBuffer(uint32_t size);
