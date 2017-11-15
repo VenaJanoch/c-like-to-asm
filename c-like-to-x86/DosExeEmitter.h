@@ -125,6 +125,10 @@ private:
     void PushVariableToStack(DosVariableDescriptor* var, SymbolType param_type);
 
 
+	void EmitGoto(InstructionEntry* i);
+	void EmitGotoLabel(InstructionEntry* i);
+	void EmitPush(InstructionEntry* i, std::stack<InstructionEntry*>& call_parameters);
+
 
     // Output buffer management
     uint8_t* AllocateBuffer(uint32_t size);
@@ -140,6 +144,7 @@ private:
     uint32_t ip_dst = 0;
 
     std::map<uint32_t, uint32_t> ip_src_to_dst;
+	std::list<DosBackpatchInstruction> backpatch;
     std::list<DosVariableDescriptor> variables;
     std::unordered_set<char*> strings;
 
