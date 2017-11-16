@@ -14,15 +14,32 @@
 #include "SymbolTableEntry.h"
 
 
+enum struct DosBackpatchType {
+    Unknown,
+
+    ToRel8,     // Relative address (8-bit)
+    ToRel16,    // Relative address (16-bit)
+    ToDsAbs16,  // Absolute address with DS segment (16-bit)
+};
+
+enum struct DosBackpatchTarget {
+    Unknown,
+
+    IP,
+    Label,
+    Function,
+    String
+};
+
 struct DosBackpatchInstruction {
-	DosBackpatchType type;
-	DosBackpatchTarget target;
+    DosBackpatchType type;
+    DosBackpatchTarget target;
 
-	uint32_t backpatch_offset;
-	uint32_t backpatch_ip;
+    uint32_t backpatch_offset;
+    uint32_t backpatch_ip;
 
-	int32_t ip_src;
-	char* value;
+    int32_t ip_src;
+    char* value;
 };
 
 enum struct CpuRegister {
@@ -47,6 +64,26 @@ enum struct CpuRegister {
     DI = 7
 };
 
+struct DosVariableDescriptor {
+    SymbolTableEntry* symbol;
+
+    char* value;
+
+    bool is_static;
+    CpuRegister reg;
+    int32_t location;
+
+    uint32_t last_used;
+
+    bool is_dirty;
+};
+
+struct DosLabel {
+    char* name;
+    int32_t ip_dst;
+};
+
+
 #pragma pack(push, 1)
 
 struct MzHeader {
@@ -66,29 +103,17 @@ struct MzHeader {
     uint16_t overlay_count;
 };
 
-
 struct MzRelocEntry {
     uint16_t offset;
     uint16_t segment;
 };
 
-
-struct DosVariableDescriptor {
-	SymbolTableEntry* symbol;
-
-	char* value;
-
-	bool is_static;
-	CpuRegister reg;
-	int32_t location;
-
-	uint32_t last_used;
-
-	bool is_dirty;
-};
 #pragma pack(pop)
 
 // Defines to shorten the code
+#define ToOpR(op, r)  \
+    (uint8_t)(op + ((uint8_t)(r) & 0x07))
+
 #define ToXrm(x, r, m)  \
     (uint8_t)((((uint8_t)(x) << 6) & 0xC0) | (((uint8_t)(r) << 3) & 0x38) | ((uint8_t)(m) & 0x07))
 
@@ -119,10 +144,10 @@ private:
 
 
     /// <summary>
-    /// Save specified variable to stack and unreference its register
+    /// Save specified variable to stack, but keep it in register
     /// </summary>
     /// <param name="var"></param>
-    void SaveAndUnloadVariable(DosVariableDescriptor* var);
+    void SaveVariable(DosVariableDescriptor* var);
 
     /// <summary>
     /// Save variable which uses specified register and unreference it
@@ -131,9 +156,16 @@ private:
     void SaveAndUnloadRegister(CpuRegister reg);
 
     /// <summary>
-    /// Save all "dirty" variables to stack and unreference all registers
+    /// Save all unsaved variables to stack and unreference all registers
     /// </summary>
     void SaveAndUnloadAllRegisters();
+
+    /// <summary>
+    /// Destroy connection of variable with register
+    /// If the variable is unsaved, compiler exception is thrown
+    /// </summary>
+    /// <param name="reg">Discarded register</param>
+    void MarkRegisterAsDiscarded(CpuRegister reg);
 
     /// <summary>
     /// Push value of variable to parameter stack 
@@ -142,7 +174,52 @@ private:
     /// <param name="param_type">Type of parameter</param>
     void PushVariableToStack(DosVariableDescriptor* var, SymbolType param_type);
 
+    /// <summary>
+    /// Force load value of variable to any register,
+    /// if it is already in register, ownership will be removed
+    /// </summary>
+    /// <param name="var">Variable to copy</param>
+    /// <param name="desired_size">Target size</param>
+    /// <returns>Target register</returns>
+    CpuRegister LoadVariableUnreferenced(DosVariableDescriptor* var, int32_t desired_size);
 
+    /// <summary>
+    /// Force copy value of variable to specified register,
+    /// it does not change ownership of any register
+    /// </summary>
+    /// <param name="var">Variable to copy</param>
+    /// <param name="reg_dst">Target register</param>
+    /// <param name="desired_size">Target size</param>
+    void CopyVariableToRegister(DosVariableDescriptor* var, CpuRegister reg_dst, int32_t desired_size);
+
+    /// <summary>
+    /// Load constant value to specified register with smallest possible size
+    /// </summary>
+    /// <param name="value">Constant value</param>
+    /// <param name="reg">Target register</param>
+    void LoadConstantToRegister(int32_t value, CpuRegister reg);
+
+    /// <summary>
+    /// Load constant value to specified register with specified size
+    /// </summary>
+    /// <param name="value">Constant value</param>
+    /// <param name="reg">Target register</param>
+    /// <param name="desired_size">Specified size</param>
+    void LoadConstantToRegister(int32_t value, CpuRegister reg, int32_t desired_size);
+
+    /// <summary>
+    /// Fill specified register with zeros
+    /// </summary>
+    /// <param name="reg">Register</param>
+    /// <param name="desired_size">Size of register</param>
+    void ZeroRegister(CpuRegister reg, int32_t desired_size);
+
+
+    void EmitEntryPointPrologue(SymbolTableEntry* function);
+
+    void EmitFunctionPrologue(SymbolTableEntry* function, SymbolTableEntry* symbol_table);
+
+    void EmitAssign(InstructionEntry* i);
 	void EmitGoto(InstructionEntry* i);
 	void EmitGotoLabel(InstructionEntry* i);
 	void EmitIf(InstructionEntry* i);

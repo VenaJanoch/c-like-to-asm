@@ -3,8 +3,17 @@
 #include <exception>
 #include <stdexcept>
 
-enum struct CompilerExceptionSource
-{
+// Common exceptions
+#define ThrowOnUnreachableCode()    \
+    __debugbreak();                 \
+    throw CompilerException(CompilerExceptionSource::Compilation, "Unexpected compiler error");
+
+#define ThrowOnTooFarCall()         \
+    __debugbreak();                 \
+    throw CompilerException(CompilerExceptionSource::Compilation, "Compiler cannot generate that high address offset");
+
+
+enum struct CompilerExceptionSource {
     Unknown,
 
     Syntax,
@@ -19,15 +28,15 @@ class CompilerException : public std::exception
 public:
     CompilerException(CompilerExceptionSource source, std::string message)
         : source(source),
-          message(message)
+        message(message)
     {
     }
 
     CompilerException(CompilerExceptionSource source, std::string message, int32_t line, int32_t column)
         : source(source),
-          message(message),
-          line(line),
-          column(column)
+        message(message),
+        line(line),
+        column(column)
     {
     }
 
