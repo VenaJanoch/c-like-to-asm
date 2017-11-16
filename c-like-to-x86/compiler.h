@@ -4,12 +4,15 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <iostream>
+#include <vector>
 
 #include "CompilerException.h"
 #include "InstructionEntry.h"
 #include "SymbolTableEntry.h"
+#include "ScopeType.h"
 
 #define LogVerbose(text) 
+//#define LogVerbose(text) { std::cout << text << "\r\n"; }
 #define Log(text) { std::cout << text << "\r\n"; }
 
 
@@ -55,16 +58,22 @@
             message, loc.first_line, loc.first_column);                     \
     }
 
+#define CheckIsConstant(exp, loc)                                           \
+    if (exp.exp_type != ExpressionType::Constant) {                         \
+        throw CompilerException(CompilerExceptionSource::Statement,         \
+            "Specified expression must have constant value", loc.first_line, loc.first_column); \
+    } 
+
 #define FillInstructionForAssign(i, assign_type, dst, op1_, op2_)           \
     {                                                                       \
         i->assignment.type = assign_type;                                   \
         i->assignment.dst_value = dst->name;                                \
         i->assignment.op1.value = op1_.value;                               \
         i->assignment.op1.type = op1_.type;                                 \
-        i->assignment.op1.exp_type = op1_.expression_type;                  \
+        i->assignment.op1.exp_type = op1_.exp_type;                  \
         i->assignment.op2.value = op2_.value;                               \
         i->assignment.op2.type = op2_.type;                                 \
-        i->assignment.op2.exp_type = op2_.expression_type;                  \
+        i->assignment.op2.exp_type = op2_.exp_type;                  \
     }
 
 #define CreateIfWithBackpatch(backpatch, compare_type, op1_, op2_)          \
@@ -73,10 +82,10 @@
         backpatch->entry->if_statement.type = compare_type;                 \
         backpatch->entry->if_statement.op1.value = op1_.value;              \
         backpatch->entry->if_statement.op1.type = op1_.type;                \
-        backpatch->entry->if_statement.op1.exp_type = op1_.expression_type; \
+        backpatch->entry->if_statement.op1.exp_type = op1_.exp_type; \
         backpatch->entry->if_statement.op2.value = op2_.value;              \
         backpatch->entry->if_statement.op2.type = op2_.type;                \
-        backpatch->entry->if_statement.op2.exp_type = op2_.expression_type; \
+        backpatch->entry->if_statement.op2.exp_type = op2_.exp_type; \
     }
 
 #define CreateIfConstWithBackpatch(backpatch, compare_type, op1_, constant)     \
@@ -85,15 +94,11 @@
         backpatch->entry->if_statement.type = compare_type;                     \
         backpatch->entry->if_statement.op1.value = op1_.value;                  \
         backpatch->entry->if_statement.op1.type = op1_.type;                    \
-        backpatch->entry->if_statement.op1.exp_type = op1_.expression_type;     \
+        backpatch->entry->if_statement.op1.exp_type = op1_.exp_type;     \
         backpatch->entry->if_statement.op2.value = constant;                    \
         backpatch->entry->if_statement.op2.type = op1_.type;                    \
         backpatch->entry->if_statement.op2.exp_type = ExpressionType::Constant; \
     }
-
-#define ThrowOnUnreachableCode()    \
-    __debugbreak();                 \
-    throw CompilerException(CompilerExceptionSource::Unknown, "Internal Error");
 
 
 class Compiler
@@ -114,9 +119,9 @@ public:
     void BackpatchStream(BackpatchList* list, int32_t new_ip);
 
 
-    SymbolTableEntry* ToDeclarationList(SymbolType type, const char* name, ExpressionType expression_type);
+    SymbolTableEntry* ToDeclarationList(SymbolType type, const char* name, ExpressionType exp_type);
     void ToParameterList(SymbolType type, const char* name);
-    SymbolTableEntry* ToCallParameterList(SymbolTableEntry* queue, SymbolType type, const char* name, ExpressionType expression_type);
+    SymbolTableEntry* ToCallParameterList(SymbolTableEntry* queue, SymbolType type, const char* name, ExpressionType exp_type);
 
     void AddLabel(const char* name, int32_t ip);
     void AddStaticVariable(SymbolType type, const char* name);
@@ -150,15 +155,20 @@ public:
     int32_t GetSymbolTypeSize(SymbolType type);
     int32_t GetReturnSymbolTypeSize(ReturnSymbolType type);
 
+    void IncreaseScope(ScopeType type);
+    void BackpatchScope(ScopeType type, int32_t new_ip);
+    bool AddToScopeList(ScopeType type, BackpatchList* backpatch);
+
 private:
     SymbolTableEntry* AddSymbol(const char* name, SymbolType type, ReturnSymbolType return_type,
-        ExpressionType expression_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent);
+        ExpressionType exp_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent, bool is_temp);
 
     const char* SymbolTypeToString(SymbolType type);
     const char* ReturnSymbolTypeToString(ReturnSymbolType type);
     const char* ExpressionTypeToString(ExpressionType type);
 
     void ReleaseDeclarationQueue();
+    void ReleaseAll();
 
     void SortSymbolTable();
 
@@ -184,9 +194,15 @@ private:
     uint32_t var_count_uint8 = 0;
     uint32_t var_count_uint16 = 0;
     uint32_t var_count_uint32 = 0;
+    uint32_t var_count_string = 0;
+
+    std::vector<BackpatchList*> break_list;
+    std::vector<BackpatchList*> continue_list;
+    int32_t break_scope = -1;
+    int32_t continue_scope = -1;
 
     uint32_t stack_size = 0;
-
+    
 };
 
 /// <summary>

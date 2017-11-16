@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <string>
 
 #include "Compiler.h"
 
@@ -27,7 +28,7 @@ Compiler c;
 //%define parse.trace
 
 %token CONST STATIC VOID BOOL UINT8 UINT16 UINT32 STRING CONSTANT IDENTIFIER
-%token IF ELSE RETURN DO WHILE FOR GOTO
+%token IF ELSE RETURN DO WHILE FOR SWITCH CASE DEFAULT CONTINUE BREAK GOTO
 %token INC_OP DEC_OP U_PLUS U_MINUS  
 %token EQUAL NOT_EQUAL GREATER_OR_EQUAL LESS_OR_EQUAL SHIFT_LEFT SHIFT_RIGHT LOG_AND LOG_OR
 
@@ -52,7 +53,7 @@ Compiler c;
     struct {
         char* value;
         SymbolType type;
-        ExpressionType expression_type;
+        ExpressionType exp_type;
 
         BackpatchList* true_list;
         BackpatchList* false_list;
@@ -61,6 +62,10 @@ Compiler c;
     struct {
         BackpatchList* next_list;
     } statement;
+
+    struct {
+        SwitchBackpatchList* next_list;
+    } switch_statement;
 
     struct {
         SymbolTableEntry* list;
@@ -78,8 +83,9 @@ Compiler c;
 %type <return_type> return_type
 %type <expression> expression assignment_with_declaration assignment CONSTANT
 %type <statement> statement statement_list matched_statement unmatched_statement program function_body function
+%type <switch_statement> switch_statement case_list default_statement
 %type <call_parameters> call_parameter_list
-%type <marker> marker jump_marker
+%type <marker> marker jump_marker continue_marker switch_next
 
 %start program_head
 
@@ -94,7 +100,14 @@ program_head
                     "Entry point not found");
             }
 
-            c.BackpatchStream($1.next_list, entry_point->ip == 0 ? 1 : entry_point->ip);
+            int32_t entry_ip;
+            if (entry_point->ip == 0) {
+                entry_ip = 1;
+            } else {
+                entry_ip = entry_point->ip;
+            }
+
+            c.BackpatchStream($1.next_list, entry_ip);
         }
     ;
 
@@ -314,7 +327,6 @@ matched_statement
         }
     | RETURN ';'
         {
-            // ToDo: Check return type, maybe true_list/false_list
             LogVerbose("P: Processing void return");
 
             $$.next_list = nullptr;
@@ -324,17 +336,15 @@ matched_statement
         }
     | RETURN assignment ';'
         {
-            // ToDo: Check return type, maybe true_list/false_list
-
             LogVerbose("P: Processing value return");
 
             $$.next_list = nullptr;
             sprintf_s(output_buffer, "return %s", $2.value);
             InstructionEntry* i = c.AddToStream(InstructionType::Return, output_buffer);
             i->return_statement.value = $2.value;
-            i->return_statement.type = $2.expression_type;
+            i->return_statement.type = $2.exp_type;
         }
-    | WHILE marker '(' assignment ')' marker matched_statement jump_marker
+    | WHILE continue_marker '(' assignment ')' marker break_marker matched_statement jump_marker marker
         {
             LogVerbose("P: Processing matched while");
 
@@ -342,20 +352,26 @@ matched_statement
 
             c.BackpatchStream($4.true_list, $6.ip);
             $$.next_list = $4.false_list;
-            c.BackpatchStream($7.next_list, $2.ip);
             c.BackpatchStream($8.next_list, $2.ip);
+            c.BackpatchStream($9.next_list, $2.ip);
+
+            c.BackpatchScope(ScopeType::Continue, $2.ip);
+            c.BackpatchScope(ScopeType::Break, $10.ip);
         }
-    | DO marker statement WHILE '(' marker assignment ')' ';'
+    | DO continue_marker break_marker statement WHILE '(' marker assignment ')' ';' marker
         {
             LogVerbose("P: Processing matched do..while");
 
-            CheckIsIntOrBool($7, "Only integer and bool types are allowed in \"while\" statement", @7);
+            CheckIsIntOrBool($8, "Only integer and bool types are allowed in \"while\" statement", @8);
 
-            c.BackpatchStream($3.next_list, $6.ip);
-            c.BackpatchStream($7.true_list, $2.ip);
-            $$.next_list = $7.false_list;
+            c.BackpatchStream($4.next_list, $7.ip);
+            c.BackpatchStream($8.true_list, $2.ip);
+            $$.next_list = $8.false_list;
+
+            c.BackpatchScope(ScopeType::Continue, $2.ip);
+            c.BackpatchScope(ScopeType::Break, $11.ip);
         }
-    | FOR '(' assignment_with_declaration ';' marker assignment ';' marker assignment jump_marker ')' marker matched_statement jump_marker
+    | FOR '(' assignment_with_declaration ';' marker assignment ';' continue_marker assignment jump_marker ')' marker break_marker matched_statement jump_marker marker
         {
             LogVerbose("P: Processing matched for");
 
@@ -364,12 +380,83 @@ matched_statement
             CheckIsInt($9, "Integer assignment is required in the last part of \"for\" statement", @9);
 
             c.BackpatchStream($3.true_list, $5.ip);
-            c.BackpatchStream($13.next_list, $8.ip);
             c.BackpatchStream($14.next_list, $8.ip);
+            c.BackpatchStream($15.next_list, $8.ip);
             $$.next_list = $6.false_list;
             c.BackpatchStream($6.true_list, $12.ip);
             c.BackpatchStream($9.true_list, $5.ip);
             c.BackpatchStream($10.next_list, $5.ip);
+
+            c.BackpatchScope(ScopeType::Continue, $8.ip);
+            c.BackpatchScope(ScopeType::Break, $16.ip);
+        }
+    | SWITCH '(' switch_next assignment ')' '{' break_marker switch_statement '}' switch_next
+        {
+            LogVerbose("P: Processing switch statement");
+        
+            CheckIsInt($4, "Only integer types are allowed in \"switch\" statement", @4);
+
+            SwitchBackpatchList* current = $8.next_list;
+            SwitchBackpatchList* default_statement = nullptr;
+
+            int32_t start_ip = c.NextIp();
+
+            while (current) {
+                if (current->is_default) {
+                    default_statement = current;
+                } else {
+                    sprintf_s(output_buffer, "if (%s == %s) goto", $4.value, current->value);
+                    InstructionEntry* i = c.AddToStream(InstructionType::If, output_buffer);
+                    i->if_statement.ip = current->source_ip;
+                    i->goto_ip = current->source_ip;
+
+                    i->if_statement.type = CompareType::Equal;
+                    i->if_statement.op1.value = $4.value;
+                    i->if_statement.op1.type = $4.type;
+                    i->if_statement.op1.exp_type = $4.exp_type;
+                    i->if_statement.op2.value = current->value;
+                    i->if_statement.op2.type = current->type;
+                    i->if_statement.op2.exp_type = ExpressionType::Constant;
+                }
+                current = current->next;
+            }
+
+            if (default_statement) {
+                InstructionEntry* i = c.AddToStream(InstructionType::Goto, "goto");
+                i->goto_statement.ip = default_statement->source_ip;
+                i->goto_ip = default_statement->source_ip;
+            }
+
+            int32_t end_ip = c.NextIp();
+
+            c.BackpatchStream($3.next_list, start_ip);      // Backpatch start of "switch" statement
+            c.BackpatchStream($10.next_list, end_ip);       // Backpatch end of "switch" statement
+
+            c.BackpatchScope(ScopeType::Break, end_ip);     // Backpatch all break statement(s)
+
+            $$.next_list = nullptr;
+        }
+    | BREAK ';'
+        {
+            BackpatchList* b = c.AddToStreamWithBackpatch(InstructionType::Goto, "goto");
+
+            if (!c.AddToScopeList(ScopeType::Break, b)) {
+                throw CompilerException(CompilerExceptionSource::Statement,
+                    "Break is not inside a loop or switch statement", @1.first_line, @1.first_column);
+            }
+
+            $$.next_list = nullptr;
+        }
+    | CONTINUE ';'
+        {
+            BackpatchList* b = c.AddToStreamWithBackpatch(InstructionType::Goto, "goto");
+
+            if (!c.AddToScopeList(ScopeType::Continue, b)) {
+                throw CompilerException(CompilerExceptionSource::Statement,
+                    "Continue is not inside a loop statement", @1.first_line, @1.first_column);
+            }
+
+            $$.next_list = nullptr;
         }
     | GOTO id ';'
         {
@@ -404,7 +491,7 @@ unmatched_statement
             c.BackpatchStream($3.true_list, $5.ip);
             $$.next_list = MergeLists($3.false_list, $6.next_list);
         }
-    | WHILE marker '(' assignment ')' marker unmatched_statement jump_marker
+    | WHILE continue_marker '(' assignment ')' marker break_marker unmatched_statement jump_marker marker
         {
             LogVerbose("P: Processing unmatched while");
 
@@ -412,10 +499,13 @@ unmatched_statement
 
             c.BackpatchStream($4.true_list, $6.ip);
             $$.next_list = $4.false_list;
-            c.BackpatchStream($7.next_list, $2.ip);
             c.BackpatchStream($8.next_list, $2.ip);
+            c.BackpatchStream($9.next_list, $2.ip);
+
+            c.BackpatchScope(ScopeType::Continue, $2.ip);
+            c.BackpatchScope(ScopeType::Break, $10.ip);
         }
-    | FOR '(' assignment_with_declaration ';' marker assignment ';' marker assignment jump_marker ')' marker unmatched_statement jump_marker
+    | FOR '(' assignment_with_declaration ';' marker assignment ';' continue_marker assignment jump_marker ')' marker break_marker unmatched_statement jump_marker marker
         {
             LogVerbose("P: Processing unmatched for");
 
@@ -424,17 +514,20 @@ unmatched_statement
             CheckIsInt($9, "Integer assignment is required in the last part of \"for\" statement", @9);
 
             c.BackpatchStream($3.true_list, $5.ip);
-            c.BackpatchStream($13.next_list, $8.ip);
             c.BackpatchStream($14.next_list, $8.ip);
+            c.BackpatchStream($15.next_list, $8.ip);
             $$.next_list = $6.false_list;
             c.BackpatchStream($6.true_list, $12.ip);
             c.BackpatchStream($9.true_list, $5.ip);
             c.BackpatchStream($10.next_list, $5.ip);
+
+            c.BackpatchScope(ScopeType::Continue, $8.ip);
+            c.BackpatchScope(ScopeType::Break, $16.ip);
         }
 
     | IF '(' assignment ')' marker matched_statement jump_marker ELSE marker unmatched_statement
         {
-            LogVerbose("P: Processing unmatched if else");
+            LogVerbose("P: Processing unmatched if..else");
 
             CheckIsIntOrBool($3, "Only integer and bool types are allowed in \"if\" statement", @3);
 
@@ -444,7 +537,77 @@ unmatched_statement
             $$.next_list = MergeLists($$.next_list, $6.next_list);
         }
     ;
-    
+
+switch_statement
+    : case_list
+        {
+            $$.next_list = $1.next_list;
+        }
+    | case_list default_statement
+        {
+            $$.next_list = MergeLists($1.next_list, $2.next_list);
+        }
+    | default_statement case_list
+        {
+            $$.next_list = MergeLists($1.next_list, $2.next_list);
+        }
+    | case_list default_statement case_list
+        {
+            $$.next_list = MergeLists($1.next_list, $2.next_list);
+            $$.next_list = MergeLists($$.next_list, $3.next_list);
+        }
+    ;
+
+default_statement
+    : DEFAULT ':' marker statement_list
+        {
+            SwitchBackpatchList* b = new SwitchBackpatchList();
+            b->source_ip = $3.ip;
+            b->is_default = true;
+            b->line = @1.first_line;
+            $$.next_list = b;
+        }
+    ;
+
+case_list
+    : CASE CONSTANT ':' marker statement_list
+        {
+            CheckIsConstant($2, @2);
+
+            SwitchBackpatchList* b = new SwitchBackpatchList();
+            b->source_ip = $4.ip;
+            b->value = $2.value;
+            b->type = $2.type;
+            b->line = @2.first_line;
+            $$.next_list = b;
+        }
+    | case_list CASE CONSTANT ':' marker statement_list
+        {
+            CheckIsConstant($3, @3);
+
+            SwitchBackpatchList* prev = $1.next_list;
+            while (prev) {
+                if (strcmp($3.value, prev->value) == 0) {
+                    std::string message = "Switch case \"";
+                    message += $3.value;
+                    message += "\" was already defined at line ";
+                    message += std::to_string(prev->line);
+                    throw CompilerException(CompilerExceptionSource::Statement,
+                        message, @3.first_line, @3.first_column);
+                }
+
+                prev = prev->next;
+            }
+            
+            SwitchBackpatchList* b = new SwitchBackpatchList();
+            b->source_ip = $5.ip;
+            b->value = $3.value;
+            b->type = $3.type;
+            b->line = @3.first_line;
+            $$.next_list = MergeLists($1.next_list, b);
+        }
+    ;
+   
 // Variable declaration, without assignment
 declaration_list
     : declaration ';'
@@ -516,7 +679,7 @@ assignment
                     message, @1.first_line, @1.first_column);
             }
 
-            if (decl->expression_type == ExpressionType::Constant) {
+            if (decl->exp_type == ExpressionType::Constant) {
                 std::string message = "Variable \"";
                 message += $1;
                 message += "\" is read-only";
@@ -524,7 +687,7 @@ assignment
                     message, @3.first_line, @3.first_column);
             }
 
-            if (!c.CanImplicitCast(decl->type, $3.type, $3.expression_type)) {
+            if (!c.CanImplicitCast(decl->type, $3.type, $3.exp_type)) {
                 std::string message = "Cannot assign to variable \"";
                 message += $1;
                 message += "\" because of type mismatch";
@@ -538,11 +701,11 @@ assignment
             i->assignment.dst_value = decl->name;
             i->assignment.op1.value = $3.value;
             i->assignment.op1.type = $3.type;
-            i->assignment.op1.exp_type = $3.expression_type;
+            i->assignment.op1.exp_type = $3.exp_type;
 
             $$.type = decl->type;
             $$.true_list = $3.true_list;
-            $$.expression_type = ExpressionType::Variable;
+            $$.exp_type = ExpressionType::Variable;
             $$.value = $1;
         }
     ;
@@ -559,7 +722,7 @@ assignment_with_declaration
         {
             LogVerbose("P: Found const. variable declaration with assignment \"" << $3 << "\"");
 
-            if ($5.expression_type != ExpressionType::Constant) {
+            if ($5.exp_type != ExpressionType::Constant) {
                 std::string message = "Cannot assign non-constant value to variable \"";
                 message += $3;
                 message += "\"";
@@ -567,7 +730,7 @@ assignment_with_declaration
                     message, @5.first_line, @5.first_column);
             }
 
-            if (!c.CanImplicitCast($2, $5.type, $5.expression_type)) {
+            if (!c.CanImplicitCast($2, $5.type, $5.exp_type)) {
                 std::string message = "Cannot assign to variable \"";
                 message += $3;
                 message += "\" because of type mismatch";
@@ -583,18 +746,18 @@ assignment_with_declaration
             i->assignment.dst_value = decl->name;
             i->assignment.op1.value = $5.value;
             i->assignment.op1.type = $5.type;
-            i->assignment.op1.exp_type = $5.expression_type;
+            i->assignment.op1.exp_type = $5.exp_type;
 
             $$.type = $2;
             $$.true_list = $5.true_list;
-            $$.expression_type = ExpressionType::Constant;
+            $$.exp_type = ExpressionType::Constant;
             $$.value = $3;
         }
     | declaration_type id '=' expression
         {
             LogVerbose("P: Found variable declaration with assignment \"" << $2 << "\"");
 
-            if (!c.CanImplicitCast($1, $4.type, $4.expression_type)) {
+            if (!c.CanImplicitCast($1, $4.type, $4.exp_type)) {
                 std::string message = "Cannot assign to variable \"";
                 message += $2;
                 message += "\" because of type mismatch";
@@ -610,11 +773,11 @@ assignment_with_declaration
             i->assignment.dst_value = decl->name;
             i->assignment.op1.value = $4.value;
             i->assignment.op1.type = $4.type;
-            i->assignment.op1.exp_type = $4.expression_type;
+            i->assignment.op1.exp_type = $4.exp_type;
 
             $$.type = $1;
             $$.true_list = $4.true_list;
-            $$.expression_type = ExpressionType::Variable;
+            $$.exp_type = ExpressionType::Variable;
             $$.value = $2;
         }
     ;
@@ -629,7 +792,7 @@ expression
             SymbolTableEntry* decl;
 
             // Create a variable if needed
-            if ($2.expression_type != ExpressionType::Variable) {
+            if ($2.exp_type != ExpressionType::Variable) {
                 decl = c.GetUnusedVariable($2.type);
 
                 sprintf_s(output_buffer, "%s = %s", decl->name, $2.value);
@@ -637,11 +800,11 @@ expression
                 i->assignment.dst_value = decl->name;
                 i->assignment.op1.value = $2.value;
                 i->assignment.op1.type = $2.type;
-                i->assignment.op1.exp_type = $2.expression_type;
+                i->assignment.op1.exp_type = $2.exp_type;
 
                 $2.value = decl->name;
                 $2.type = decl->type;
-                $2.expression_type = ExpressionType::Variable;
+                $2.exp_type = ExpressionType::Variable;
             } else {
                 decl = c.GetParameter($2.value);
             }
@@ -652,7 +815,7 @@ expression
             i->assignment.dst_value = decl->name;
             i->assignment.op1.value = $2.value;
             i->assignment.op1.type = $2.type;
-            i->assignment.op1.exp_type = $2.expression_type;
+            i->assignment.op1.exp_type = $2.exp_type;
             i->assignment.op2.value = _strdup("1");
             i->assignment.op2.type = $2.type;
             i->assignment.op2.exp_type = ExpressionType::Constant;
@@ -670,7 +833,7 @@ expression
             SymbolTableEntry* decl;
 
             // Create a variable if needed
-            if ($2.expression_type != ExpressionType::Variable) {
+            if ($2.exp_type != ExpressionType::Variable) {
                 decl = c.GetUnusedVariable($2.type);
 
                 sprintf_s(output_buffer, "%s = %s", decl->name, $2.value);
@@ -678,11 +841,11 @@ expression
                 i->assignment.dst_value = decl->name;
                 i->assignment.op1.value = $2.value;
                 i->assignment.op1.type = $2.type;
-                i->assignment.op1.exp_type = $2.expression_type;
+                i->assignment.op1.exp_type = $2.exp_type;
 
                 $2.value = decl->name;
                 $2.type = decl->type;
-                $2.expression_type = ExpressionType::Variable;
+                $2.exp_type = ExpressionType::Variable;
             } else {
                 decl = c.GetParameter($2.value);
             }
@@ -693,7 +856,7 @@ expression
             i->assignment.dst_value = decl->name;
             i->assignment.op1.value = $2.value;
             i->assignment.op1.type = $2.type;
-            i->assignment.op1.exp_type = $2.expression_type;
+            i->assignment.op1.exp_type = $2.exp_type;
             i->assignment.op2.value = _strdup("1");
             i->assignment.op2.type = $2.type;
             i->assignment.op2.exp_type = ExpressionType::Constant;
@@ -763,7 +926,7 @@ expression
 
             $$.value = "TrueFalse Only!";
             $$.type = SymbolType::Bool;
-            $$.expression_type = ExpressionType::None;
+            $$.exp_type = ExpressionType::None;
         }
     | expression EQUAL expression
         {
@@ -788,7 +951,7 @@ expression
             }
             $$.value = "TrueFalse Only!";
             $$.type = SymbolType::Bool;
-            $$.expression_type = ExpressionType::None;
+            $$.exp_type = ExpressionType::None;
         }
     | expression GREATER_OR_EQUAL expression
         {
@@ -805,7 +968,7 @@ expression
 
             $$.value = "TrueFalse Only!";
             $$.type = SymbolType::Bool;
-            $$.expression_type = ExpressionType::None;
+            $$.exp_type = ExpressionType::None;
         }
     | expression LESS_OR_EQUAL expression
         {
@@ -822,7 +985,7 @@ expression
 
             $$.value = "TrueFalse Only!";
             $$.type = SymbolType::Bool;
-            $$.expression_type = ExpressionType::None;
+            $$.exp_type = ExpressionType::None;
             printf("P: Done processing logical smaller or equal.\n");
         }
     | expression '>' expression
@@ -840,7 +1003,7 @@ expression
 
             $$.value = "TrueFalse Only!";
             $$.type = SymbolType::Bool;
-            $$.expression_type = ExpressionType::None;
+            $$.exp_type = ExpressionType::None;
         }
     | expression '<' expression
         {
@@ -857,7 +1020,7 @@ expression
 
             $$.value = "TrueFalse Only!";
             $$.type = SymbolType::Bool;
-            $$.expression_type = ExpressionType::None;
+            $$.exp_type = ExpressionType::None;
         }
     | expression SHIFT_LEFT expression
         {
@@ -874,7 +1037,7 @@ expression
 
             $$.value = decl->name;
             $$.type = $1.type;
-            $$.expression_type = ExpressionType::Variable;
+            $$.exp_type = ExpressionType::Variable;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -893,7 +1056,7 @@ expression
 
             $$.value = decl->name;
             $$.type = $1.type;
-            $$.expression_type = ExpressionType::Variable;
+            $$.exp_type = ExpressionType::Variable;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -910,7 +1073,7 @@ expression
 
                 $$.value = decl->name;
                 $$.type = SymbolType::String;
-                $$.expression_type = ExpressionType::Variable;
+                $$.exp_type = ExpressionType::Variable;
                 $$.true_list = nullptr;
                 $$.false_list = nullptr;
             } else {
@@ -930,7 +1093,7 @@ expression
 
                 $$.value = decl->name;
                 $$.type = type;
-                $$.expression_type = ExpressionType::Variable;
+                $$.exp_type = ExpressionType::Variable;
                 $$.true_list = nullptr;
                 $$.false_list = nullptr;
             }
@@ -953,7 +1116,7 @@ expression
 
             $$.value = decl->name;
             $$.type = type;
-            $$.expression_type = ExpressionType::Variable;
+            $$.exp_type = ExpressionType::Variable;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -975,7 +1138,7 @@ expression
 
             $$.value = decl->name;
             $$.type = type;
-            $$.expression_type = ExpressionType::Variable;
+            $$.exp_type = ExpressionType::Variable;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -997,7 +1160,7 @@ expression
 
             $$.value = decl->name;
             $$.type = type;
-            $$.expression_type = ExpressionType::Variable;
+            $$.exp_type = ExpressionType::Variable;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -1019,7 +1182,7 @@ expression
 
             $$.value = decl->name;
             $$.type = type;
-            $$.expression_type = ExpressionType::Variable;
+            $$.exp_type = ExpressionType::Variable;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -1053,7 +1216,7 @@ expression
             CheckIsInt($2, "Unary operator is not allowed in this context", @1);
 
             SymbolTableEntry* decl = c.GetUnusedVariable($2.type);
-            decl->expression_type = $2.expression_type;
+            decl->exp_type = $2.exp_type;
 
             sprintf_s(output_buffer, "%s = -%s", decl->name, $2.value);
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
@@ -1061,11 +1224,11 @@ expression
             i->assignment.dst_value = decl->name;
             i->assignment.op1.value = $2.value;
             i->assignment.op1.type = $2.type;
-            i->assignment.op1.exp_type = $2.expression_type;
+            i->assignment.op1.exp_type = $2.exp_type;
 
             $$ = $2;
             $$.value = decl->name;
-            $$.expression_type = ExpressionType::Variable;
+            $$.exp_type = ExpressionType::Variable;
        }
     | CONSTANT
         {
@@ -1073,7 +1236,7 @@ expression
 
             $$.value = _strdup($1.value);
             $$.type = $1.type;
-            $$.expression_type = ExpressionType::Constant;
+            $$.exp_type = ExpressionType::Constant;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -1100,7 +1263,7 @@ expression
                 // Has void return
                 $$.type = SymbolType::None;
                 $$.value = nullptr;
-                $$.expression_type = ExpressionType::None;
+                $$.exp_type = ExpressionType::None;
                 c.PrepareForCall($1, $3.list, $3.count);
 
                 sprintf_s(output_buffer, "call %s (%d)", $1, $3.count);
@@ -1120,7 +1283,7 @@ expression
                 SymbolTableEntry* decl = c.GetUnusedVariable($$.type);
 
                 $$.value = decl->name;
-                $$.expression_type = ExpressionType::Variable;
+                $$.exp_type = ExpressionType::Variable;
                 c.PrepareForCall($1, $3.list, $3.count);
 
                 sprintf_s(output_buffer, "%s = call %s (%d)", decl->name, $1, $3.count);
@@ -1146,7 +1309,7 @@ expression
                 // Has return value
                 $$.type = SymbolType::None;
                 $$.value = nullptr;
-                $$.expression_type = ExpressionType::None;
+                $$.exp_type = ExpressionType::None;
                 c.PrepareForCall($1, nullptr, 0);
 
                 sprintf_s(output_buffer, "call %s (%d)", $1, 0);
@@ -1166,7 +1329,7 @@ expression
                 SymbolTableEntry* decl = c.GetUnusedVariable($$.type);
 
                 $$.value = decl->name;
-                $$.expression_type = ExpressionType::Variable;
+                $$.exp_type = ExpressionType::Variable;
                 c.PrepareForCall($1, nullptr, 0);
 
                 sprintf_s(output_buffer, "%s = call %s (%d)", decl->name, $1, 0);
@@ -1190,7 +1353,7 @@ expression
 
             $$.value = $1;
             $$.type = param->type;
-            $$.expression_type = ExpressionType::Variable;
+            $$.exp_type = ExpressionType::Variable;
         }
     ;
 
@@ -1201,7 +1364,7 @@ call_parameter_list
 
             CheckTypeIsValid($1.type, @1);
 
-            $$.list = c.ToCallParameterList(nullptr, $1.type, $1.value, $1.expression_type);
+            $$.list = c.ToCallParameterList(nullptr, $1.type, $1.value, $1.exp_type);
             $$.count = 1;
         }
     | call_parameter_list ',' expression
@@ -1210,7 +1373,7 @@ call_parameter_list
 
             CheckTypeIsValid($3.type, @3);
 
-            $$.list = c.ToCallParameterList($1.list, $3.type, $3.value, $3.expression_type);
+            $$.list = c.ToCallParameterList($1.list, $3.type, $3.value, $3.exp_type);
             $$.count = $1.count + 1;
         }
     ;
@@ -1237,7 +1400,7 @@ id
     ;
 
 marker
-    :    {    
+    :   {    
             LogVerbose("P: Generating marker");
 
             $$.ip = c.NextIp();
@@ -1245,12 +1408,40 @@ marker
     ;
 
 jump_marker
-    :    {
+    :   {
             LogVerbose("P: Generating jump marker");
 
             $$.ip = c.NextIp();
             sprintf_s(output_buffer, "goto");
             $$.next_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+        }
+    ;
+
+break_marker
+    :   {
+            LogVerbose("P: Generating break marker");
+
+            c.IncreaseScope(ScopeType::Break);
+        }
+    ;
+
+continue_marker
+    :   {
+            LogVerbose("P: Generating continue marker");
+
+            $$.ip = c.NextIp();
+            c.IncreaseScope(ScopeType::Continue);
+        }
+    ;
+
+switch_next
+    :   {
+            LogVerbose("P: Generating switch next marker");
+
+            sprintf_s(output_buffer, "goto");
+            $$.next_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
+
+            $$.ip = c.NextIp();
         }
     ;
 

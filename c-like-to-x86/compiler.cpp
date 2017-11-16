@@ -99,7 +99,7 @@ int Compiler::OnRun(int argc, wchar_t* argv[])
             emitter.EmitInstructions(instruction_stream_head, symbol_table);
             emitter.EmitSharedFunctions(symbol_table);
             emitter.EmitStaticData();
-
+            emitter.FixMzHeader(instruction_stream_head, stack_size);
             emitter.Save(outputExe);
 
             CreateDebugOutput(outputAsm);
@@ -148,6 +148,8 @@ int Compiler::OnRun(int argc, wchar_t* argv[])
     fclose(outputExe);
     fclose(outputAsm);
 
+    ReleaseAll();
+
     return EXIT_SUCCESS;
 }
 
@@ -160,19 +162,20 @@ void Compiler::CreateDebugOutput(FILE* output_file)
             ""
             "Name            Type         Return    IP       Offset/Size  Param.  Exp. Type  Parent\r\n"
             "___________________________________________________________________________________________\r\n");
-
+            
         SymbolTableEntry* current = symbol_table;
 
         while (current) {
             fprintf(output_file,
-                "%-15s %-12s %-9s %-8lu %-12lu %-7lu %-10s %s\r\n",
+                "%-15s %-12s %-9s %-8lu %-12lu %-7lu %-6s %-3s %s\r\n",
                 current->name,
                 SymbolTypeToString(current->type),
                 ReturnSymbolTypeToString(current->return_type),
                 current->ip,
                 current->offset_or_size,
                 current->parameter,
-                ExpressionTypeToString(current->expression_type),
+                ExpressionTypeToString(current->exp_type),
+                (current->is_temp ? "[T]" : ""),
                 current->parent == nullptr ? "-" : current->parent);
 
             current = current->next;
@@ -240,8 +243,6 @@ void Compiler::ParseCompilerDirective(char* directive)
 
 InstructionEntry* Compiler::AddToStream(InstructionType type, char* code)
 {
-    //Log(":: " << code);
-
     InstructionEntry* entry = new InstructionEntry();
     entry->content = _strdup(code);
     entry->goto_ip = -1;
@@ -272,8 +273,6 @@ BackpatchList* Compiler::AddToStreamWithBackpatch(InstructionType type, char* co
 
 void Compiler::BackpatchStream(BackpatchList* list, int32_t new_ip)
 {
-    //Log("Backpatching in progress (" << new_ip << ")...");
-
     while (list) {
         if (list->entry) {
             // Apply new abstract instruction pointer value
@@ -292,8 +291,6 @@ void Compiler::BackpatchStream(BackpatchList* list, int32_t new_ip)
             }
         }
 
-        //Log(" - " << list->entry->content);
-
         // Release entry in backpatch linked list
         BackpatchList* current = list;
         list = list->next;
@@ -302,12 +299,12 @@ void Compiler::BackpatchStream(BackpatchList* list, int32_t new_ip)
 }
 
 
-SymbolTableEntry* Compiler::ToDeclarationList(SymbolType type, const char* name, ExpressionType expression_type)
+SymbolTableEntry* Compiler::ToDeclarationList(SymbolType type, const char* name, ExpressionType exp_type)
 {
     SymbolTableEntry* symbol = new SymbolTableEntry();
     symbol->name = _strdup(name);
     symbol->type = type;
-    symbol->expression_type = expression_type;
+    symbol->exp_type = exp_type;
     symbol->offset_or_size = GetSymbolTypeSize(type);
 
     if (declaration_queue) {
@@ -332,7 +329,7 @@ SymbolTableEntry* Compiler::ToDeclarationList(SymbolType type, const char* name,
 void Compiler::ToParameterList(SymbolType type, const char* name)
 {
     parameter_count++;
-
+    
     SymbolTableEntry* symbol = new SymbolTableEntry();
     symbol->name = _strdup(name);
     symbol->type = type;
@@ -356,12 +353,12 @@ void Compiler::ToParameterList(SymbolType type, const char* name)
     }
 }
 
-SymbolTableEntry* Compiler::ToCallParameterList(SymbolTableEntry* list, SymbolType type, const char* name, ExpressionType expression_type)
+SymbolTableEntry* Compiler::ToCallParameterList(SymbolTableEntry* list, SymbolType type, const char* name, ExpressionType exp_type)
 {
     SymbolTableEntry* symbol = new SymbolTableEntry();
     symbol->name = _strdup(name);
     symbol->type = type;
-    symbol->expression_type = expression_type;
+    symbol->exp_type = exp_type;
 
     if (list) {
         SymbolTableEntry* entry = list;
@@ -402,7 +399,7 @@ void Compiler::AddLabel(const char* name, int32_t ip)
 void Compiler::AddStaticVariable(SymbolType type, const char* name)
 {
     SymbolTableEntry* entry = AddSymbol(name, type, ReturnSymbolType::Unknown,
-        ExpressionType::Variable, 0, GetSymbolTypeSize(type), 0, nullptr);
+        ExpressionType::Variable, 0, GetSymbolTypeSize(type), 0, nullptr, false);
 }
 
 void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
@@ -412,8 +409,8 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
         SymbolTableEntry* current = symbol_table;
         while (current) {
             if ((current->type == SymbolType::Function ||
-                current->type == SymbolType::EntryPoint ||
-                current->type == SymbolType::SharedFunction) &&
+                 current->type == SymbolType::EntryPoint ||
+                 current->type == SymbolType::SharedFunction) &&
                 strcmp(name, current->name) == 0) {
 
                 std::string message = "Function \"";
@@ -450,7 +447,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
             //Log(" - " << current->name << " (" << size << " bytes)");
 
             AddSymbol(current->name, current->type, current->return_type,
-                current->expression_type, current->ip, offset_internal, 0, name);
+                current->exp_type, current->ip, offset_internal, 0, name, current->is_temp);
 
             offset_internal += size;
             offset_global += size;
@@ -459,26 +456,26 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
         }
 
         SymbolTableEntry* entry = AddSymbol(name, SymbolType::EntryPoint, return_type,
-            ExpressionType::None, ip, offset_internal, 0, nullptr);
+            ExpressionType::None, ip, offset_internal, 0, nullptr, false);
 
         /*
         // Move entry point to the beginning of the list
         if (symbol_table != entry) {
-        SymbolTableEntry* entry_before = symbol_table;
-        while (entry_before->next != entry) {
-        entry_before = entry_before->next;
-        }
+            SymbolTableEntry* entry_before = symbol_table;
+            while (entry_before->next != entry) {
+                entry_before = entry_before->next;
+            }
 
-        entry_before->next = entry->next;
-        entry->next = symbol_table;
-        symbol_table = entry;
+            entry_before->next = entry->next;
+            entry->next = symbol_table;
+            symbol_table = entry;
         }
         */
 
         ReleaseDeclarationQueue();
         return;
     }
-
+    
     // Find function prototype
     SymbolTableEntry* prototype = symbol_table;
     while (prototype) {
@@ -546,7 +543,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
             //Log(" - " << current->name << " (" << size << " bytes)");
 
             AddSymbol(current->name, current->type, current->return_type,
-                current->expression_type, current->ip, offset_internal, 0, name);
+                current->exp_type, current->ip, offset_internal, 0, name, current->is_temp);
 
             offset_internal += size;
             offset_global += size;
@@ -585,7 +582,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
         }
 
         AddSymbol(current->name, current->type, current->return_type,
-            current->expression_type, current->ip, offset_internal, current->parameter, name);
+            current->exp_type, current->ip, offset_internal, current->parameter, name, current->is_temp);
 
         offset_internal += size;
         offset_global += size;
@@ -594,7 +591,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
     }
 
     AddSymbol(name, SymbolType::Function, return_type,
-        ExpressionType::None, ip, offset_internal, parameter_count, nullptr);
+        ExpressionType::None, ip, offset_internal, parameter_count, nullptr, false);
 
     ReleaseDeclarationQueue();
 }
@@ -615,9 +612,9 @@ void Compiler::AddFunctionPrototype(char* name, ReturnSymbolType return_type)
         SymbolTableEntry* current = symbol_table;
         while (current) {
             if ((current->type == SymbolType::FunctionPrototype ||
-                current->type == SymbolType::Function ||
-                current->type == SymbolType::EntryPoint ||
-                current->type == SymbolType::SharedFunction) &&
+                 current->type == SymbolType::Function ||
+                 current->type == SymbolType::EntryPoint ||
+                 current->type == SymbolType::SharedFunction) &&
                 strcmp(name, current->name) == 0) {
 
                 std::string message = "Duplicate function definition for \"";
@@ -631,7 +628,7 @@ void Compiler::AddFunctionPrototype(char* name, ReturnSymbolType return_type)
     }
 
     AddSymbol(name, SymbolType::FunctionPrototype, return_type,
-        ExpressionType::None, 0, 0, parameter_count, nullptr);
+        ExpressionType::None, 0, 0, parameter_count, nullptr, false);
 
     // Collect all function parameters
     {
@@ -641,7 +638,7 @@ void Compiler::AddFunctionPrototype(char* name, ReturnSymbolType return_type)
             parameter_current++;
 
             AddSymbol(current->name, current->type, current->return_type,
-                current->expression_type, current->ip, current->offset_or_size, parameter_current, name);
+                current->exp_type, current->ip, current->offset_or_size, parameter_current, name, current->is_temp);
 
             current = current->next;
         }
@@ -656,8 +653,8 @@ void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameter
     SymbolTableEntry* current = symbol_table;
     while (current) {
         if ((current->type == SymbolType::Function ||
-            current->type == SymbolType::FunctionPrototype ||
-            current->type == SymbolType::SharedFunction) &&
+             current->type == SymbolType::FunctionPrototype ||
+             current->type == SymbolType::SharedFunction) &&
             strcmp(name, current->name) == 0) {
 
             break;
@@ -702,9 +699,9 @@ void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameter
 
             return;
         }
-
+        
         // ToDo: Correct ExpressionType
-        if (!CanImplicitCast(current->type, call_parameters->type, call_parameters->expression_type)) {
+        if (!CanImplicitCast(current->type, call_parameters->type, call_parameters->exp_type)) {
             std::string message = "Cannot call function \"";
             message += name;
             message += "\" because of parameter \"";
@@ -767,8 +764,8 @@ SymbolTableEntry* Compiler::GetFunction(const char* name)
     SymbolTableEntry* current = symbol_table;
     while (current) {
         if ((current->type == SymbolType::Function ||
-            current->type == SymbolType::FunctionPrototype ||
-            current->type == SymbolType::SharedFunction) &&
+             current->type == SymbolType::FunctionPrototype ||
+             current->type == SymbolType::SharedFunction) &&
             strcmp(name, current->name) == 0) {
 
             return current;
@@ -802,11 +799,11 @@ bool Compiler::CanImplicitCast(SymbolType to, SymbolType from, ExpressionType ty
 
     if (type == ExpressionType::Constant) {
         if ((from == SymbolType::Uint8 ||
-            from == SymbolType::Uint16 ||
-            from == SymbolType::Uint32) &&
+             from == SymbolType::Uint16 ||
+             from == SymbolType::Uint32) &&
             (to == SymbolType::Uint8 ||
-            to == SymbolType::Uint16 ||
-            to == SymbolType::Uint32)) {
+             to == SymbolType::Uint16 ||
+             to == SymbolType::Uint32)) {
 
             // Constant implicit cast
             return true;
@@ -855,35 +852,39 @@ SymbolTableEntry* Compiler::GetUnusedVariable(SymbolType type)
             sprintf_s(buffer, "__b_%d", var_count_bool);
             break;
         }
-
         case SymbolType::Uint8: {
             var_count_uint8++;
             sprintf_s(buffer, "__ui8_%d", var_count_uint8);
             break;
         }
-
         case SymbolType::Uint16: {
             var_count_uint16++;
             sprintf_s(buffer, "__ui16_%d", var_count_uint16);
             break;
         }
-
         case SymbolType::Uint32: {
             var_count_uint32++;
             sprintf_s(buffer, "__ui32_%d", var_count_uint32);
+            break;
+        }
+        case SymbolType::String: {
+            var_count_string++;
+            sprintf_s(buffer, "__s_%d", var_count_uint32);
             break;
         }
 
         default: ThrowOnUnreachableCode();
     }
 
-    return ToDeclarationList(type, buffer, ExpressionType::Variable);
+    SymbolTableEntry* decl = ToDeclarationList(type, buffer, ExpressionType::Variable);
+    decl->is_temp = true;
+    return decl;
 }
 
 
 
 SymbolTableEntry* Compiler::AddSymbol(const char* name, SymbolType type, ReturnSymbolType return_type,
-    ExpressionType expression_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent)
+    ExpressionType exp_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent, bool is_temp)
 {
     if (!name || strlen(name) == 0) {
         throw CompilerException(CompilerExceptionSource::Declaration, "Symbol name must not be empty", yylineno, -1);
@@ -893,11 +894,12 @@ SymbolTableEntry* Compiler::AddSymbol(const char* name, SymbolType type, ReturnS
     symbol->name = _strdup(name);
     symbol->type = type;
     symbol->return_type = return_type;
-    symbol->expression_type = expression_type;
+    symbol->exp_type = exp_type;
     symbol->ip = ip;
     symbol->offset_or_size = offset_or_size;
     symbol->parameter = parameter;
     symbol->parent = (parent == nullptr ? nullptr : _strdup(parent));
+    symbol->is_temp = is_temp;
 
     // Add it to the symbol table
     SymbolTableEntry* tail = symbol_table;
@@ -982,8 +984,89 @@ int32_t Compiler::GetReturnSymbolTypeSize(ReturnSymbolType type)
         case ReturnSymbolType::Uint16: return 2;
         case ReturnSymbolType::Uint32: return 4;
 
+        case ReturnSymbolType::String: return 2; // 16-bit pointer
+
         default: ThrowOnUnreachableCode();
     }
+}
+
+void Compiler::IncreaseScope(ScopeType type)
+{
+    switch (type) {
+        case ScopeType::Break: {
+            break_scope++;
+            break_list.push_back(nullptr);
+            break;
+        }
+
+        case ScopeType::Continue: {
+            continue_scope++;
+            continue_list.push_back(nullptr);
+            break;
+        }
+
+        default: ThrowOnUnreachableCode();
+    }
+}
+
+void Compiler::BackpatchScope(ScopeType type, int32_t new_ip)
+{
+    switch (type) {
+        case ScopeType::Break: {
+            BackpatchStream(break_list[break_scope], new_ip);
+
+            break_list[break_scope] = nullptr;
+            break_scope--;
+            break;
+        }
+
+        case ScopeType::Continue: {
+            BackpatchStream(continue_list[continue_scope], new_ip);
+
+            continue_list[continue_scope] = nullptr;
+            continue_scope--;
+            break;
+        }
+
+        default: ThrowOnUnreachableCode();
+    }
+}
+
+bool Compiler::AddToScopeList(ScopeType type, BackpatchList* backpatch)
+{
+    switch (type) {
+        case ScopeType::Break: {
+            if (break_scope < 0) {
+                return false;
+            }
+
+            size_t list_size = break_list.size();
+            if (list_size == 0 || list_size == break_scope - 1) {
+                break_list.push_back(backpatch);
+            } else {
+                break_list[break_scope] = MergeLists(backpatch, break_list[break_scope]);
+            }
+            break;
+        }
+
+        case ScopeType::Continue: {
+            if (continue_scope < 0) {
+                return false;
+            }
+
+            size_t list_size = continue_list.size();
+            if (list_size == 0 || list_size == continue_scope - 1) {
+                continue_list.push_back(backpatch);
+            } else {
+                continue_list[continue_scope] = MergeLists(backpatch, continue_list[continue_scope]);
+            }
+            break;
+        }
+
+        default: ThrowOnUnreachableCode();
+    }
+
+    return true;
 }
 
 void Compiler::ReleaseDeclarationQueue()
@@ -991,10 +1074,33 @@ void Compiler::ReleaseDeclarationQueue()
     while (declaration_queue) {
         SymbolTableEntry* current = declaration_queue;
         declaration_queue = declaration_queue->next;
+        //free(current->name);
         delete current;
     }
 
     parameter_count = 0;
+}
+
+void Compiler::ReleaseAll()
+{
+    ReleaseDeclarationQueue();
+
+    while (instruction_stream_head) {
+        InstructionEntry* current = instruction_stream_head;
+        instruction_stream_head = instruction_stream_head->next;
+        free(current->content);
+        delete current;
+    }
+
+    instruction_stream_tail = nullptr;
+
+    while (symbol_table) {
+        SymbolTableEntry* current = symbol_table;
+        symbol_table = symbol_table->next;
+        free(current->name);
+        free(current->parent);
+        delete current;
+    }
 }
 
 void Compiler::SortSymbolTable()
@@ -1008,7 +1114,7 @@ void Compiler::SortSymbolTable()
     while (symbol) {
         if (!symbol->parent &&
             (symbol->type == SymbolType::Function ||
-            symbol->type == SymbolType::EntryPoint)) {
+             symbol->type == SymbolType::EntryPoint)) {
 
             if (symbol->ip == 0) {
                 symbol->ip = 1;
@@ -1079,23 +1185,23 @@ void Compiler::DeclareSharedFunctions()
 {
     // void PrintUint32(uint32 value);
     AddSymbol("PrintUint32", SymbolType::SharedFunction, ReturnSymbolType::Void,
-        ExpressionType::None, 0, 0, 1, nullptr);
+        ExpressionType::None, 0, 0, 1, nullptr, false);
 
     AddSymbol("value", SymbolType::Uint32, ReturnSymbolType::Unknown,
-        ExpressionType::None, 0, 0, 1, "PrintUint32");
+        ExpressionType::None, 0, 0, 1, "PrintUint32", false);
 
     // void PrintString(string value);
     AddSymbol("PrintString", SymbolType::SharedFunction, ReturnSymbolType::Void,
-        ExpressionType::None, 0, 0, 1, nullptr);
+        ExpressionType::None, 0, 0, 1, nullptr, false);
 
     AddSymbol("value", SymbolType::String, ReturnSymbolType::Unknown,
-        ExpressionType::None, 0, 0, 1, "PrintString");
+        ExpressionType::None, 0, 0, 1, "PrintString", false);
 
     // void PrintNewLine();
     AddSymbol("PrintNewLine", SymbolType::SharedFunction, ReturnSymbolType::Void,
-        ExpressionType::None, 0, 0, 0, nullptr);
+        ExpressionType::None, 0, 0, 0, nullptr, false);
 
     // uint32 ReadUint32();
     AddSymbol("ReadUint32", SymbolType::SharedFunction, ReturnSymbolType::Uint32,
-        ExpressionType::None, 0, 0, 0, nullptr);
+        ExpressionType::None, 0, 0, 0, nullptr, false);
 }
