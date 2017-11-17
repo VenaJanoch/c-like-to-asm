@@ -188,54 +188,6 @@ void DosExeEmitter::Save(FILE* stream)
     }
 }
 
-void DosExeEmitter::SaveVariable(DosVariableDescriptor* var)
-{
-    if (!var->is_dirty) {
-        return;
-    }
-
-    if (!FindNextVariableReference(var)) {
-        // Variable is not needed anymore, drop it...
-        return;
-    }
-
-    if (var->location == 0) {
-        ThrowOnUnreachableCode();
-    }
-
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
-    switch (var_size) {
-        case 1: {
-            // Register to stack copy (8-bit range)
-            uint8_t* a = AllocateBufferForInstruction(2 + 1);
-            a[0] = 0x88;   // mov rm8, r8
-            a[1] = ToXrm(1, var->reg, 6);
-            a[2] = (int8_t)var->location;
-            break;
-        }
-        case 2: {
-            // Register to stack copy (8-bit range)
-            uint8_t* a = AllocateBufferForInstruction(2 + 1);
-            a[0] = 0x89;   // mov rm16/32, r16/32
-            a[1] = ToXrm(1, var->reg, 6);
-            a[2] = (int8_t)var->location;
-            break;
-        }
-        case 4: {
-            // Stack to register copy (8-bit range)
-            uint8_t* a = AllocateBufferForInstruction(3 + 1);
-            a[0] = 0x66;   // Operand size prefix
-            a[1] = 0x89;   // mov rm16/32, r16/32
-            a[2] = ToXrm(1, var->reg, 6);
-            a[3] = (int8_t)var->location;
-            break;
-        }
-
-        default: ThrowOnUnreachableCode();
-    }
-
-    var->is_dirty = false;
-}
 
 DosVariableDescriptor* DosExeEmitter::FindVariableByName(char* name)
 {
@@ -717,6 +669,102 @@ void DosExeEmitter::ZeroRegister(CpuRegister reg, int32_t desired_size)
 
         default: ThrowOnUnreachableCode();
     }
+}
+
+void DosExeEmitter::BackpatchAddresses()
+{
+	std::list<DosBackpatchInstruction>::iterator it = backpatch.begin();
+
+	while (it != backpatch.end()) {
+		if (it->target == DosBackpatchTarget::IP && it->ip_src == ip_src) {
+			switch (it->type) {
+			case DosBackpatchType::ToRel8: {
+				int8_t rel8 = (int8_t)(ip_src_to_dst[ip_src] - it->backpatch_ip);
+				*(int8_t*)(buffer + it->backpatch_offset) = rel8;
+				break;
+			}
+
+			case DosBackpatchType::ToRel16: {
+				int16_t rel16 = (int16_t)(ip_src_to_dst[ip_src] - it->backpatch_ip);
+				*(int16_t*)(buffer + it->backpatch_offset) = rel16;
+				break;
+			}
+
+			default: ThrowOnUnreachableCode();
+			}
+
+			it = backpatch.erase(it);
+		}
+		else {
+			++it;
+		}
+	}
+}
+
+void DosExeEmitter::BackpatchLabels(DosLabel& label, DosBackpatchTarget target)
+{
+	std::list<DosBackpatchInstruction>::iterator it = backpatch.begin();
+
+	while (it != backpatch.end()) {
+		if (it->target == target && strcmp(it->value, label.name) == 0) {
+			switch (it->type) {
+			case DosBackpatchType::ToRel8: {
+				int8_t rel8 = (int8_t)(label.ip_dst - it->backpatch_ip);
+				*(int8_t*)(buffer + it->backpatch_offset) = rel8;
+				break;
+			}
+			case DosBackpatchType::ToRel16: {
+				int16_t rel16 = (int16_t)(label.ip_dst - it->backpatch_ip);
+				*(int16_t*)(buffer + it->backpatch_offset) = rel16;
+				break;
+			}
+			case DosBackpatchType::ToDsAbs16: {
+				int16_t abs16 = (int16_t)label.ip_dst;
+				abs16 += 0x0100; // Add Program Segment Prefix
+				*(int16_t*)(buffer + it->backpatch_offset) = abs16;
+				break;
+			}
+
+			default: ThrowOnUnreachableCode();
+			}
+
+			it = backpatch.erase(it);
+		}
+		else {
+			++it;
+		}
+	}
+}
+
+void DosExeEmitter::CheckBackpatchListIsEmpty(DosBackpatchTarget target)
+{
+	std::list<DosBackpatchInstruction>::iterator it = backpatch.begin();
+
+	while (it != backpatch.end()) {
+		if (it->target == target) {
+			if (target == DosBackpatchTarget::Function) {
+				std::string message = "Function \"";
+				message += it->value;
+				message += "\" called from \"";
+				message += parent->name;
+				message += "\" could not be resolved";
+				throw CompilerException(CompilerExceptionSource::Statement, message);
+			}
+			else if (target == DosBackpatchTarget::String) {
+				std::string message = "Label \"";
+				message += it->value;
+				message += "\" in function \"";
+				message += parent->name;
+				message += "\" could not be resolved";
+				throw CompilerException(CompilerExceptionSource::Statement, message);
+			}
+			else {
+				ThrowOnUnreachableCode();
+			}
+		}
+
+		++it;
+	}
 }
 
 void DosExeEmitter::EmitEntryPointPrologue(SymbolTableEntry* function)
@@ -2161,7 +2209,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
 				ThrowOnUnreachableCode();
 			}
 
-			switch (push->push_statement.symbol->expression_type) {
+			switch (push->push_statement.symbol->exp_type) {
 			case ExpressionType::Constant: {
 				// Push constant directly to parameter stack
 				switch (param_decl->type) {

@@ -220,18 +220,40 @@ private:
     /// <param name="desired_size">Size of register</param>
     void ZeroRegister(CpuRegister reg, int32_t desired_size);
 
+	// Backpatching
+	void BackpatchAddresses();
+	void BackpatchLabels(DosLabel& label, DosBackpatchTarget target);
+	void CheckBackpatchListIsEmpty(DosBackpatchTarget target);
 
+	// Instruction emitters
     void EmitEntryPointPrologue(SymbolTableEntry* function);
 
-    void EmitFunctionPrologue(SymbolTableEntry* function, SymbolTableEntry* symbol_table);
+	void EmitFunctionPrologue(SymbolTableEntry* function, SymbolTableEntry* symbol_table);
 
-    void EmitAssign(InstructionEntry* i);
+	void EmitAssign(InstructionEntry* i);
 	void EmitGoto(InstructionEntry* i);
 	void EmitGotoLabel(InstructionEntry* i);
 	void EmitIf(InstructionEntry* i);
 	void EmitPush(InstructionEntry* i, std::stack<InstructionEntry*>& call_parameters);
 	void EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table, std::stack<InstructionEntry*>& call_parameters);
 	void EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_table);
+
+
+	/// <summary>
+	/// Get opposite compare type, so operands can be swapped
+	/// </summary>
+	/// <param name="type">Compare type</param>
+	/// <returns>Opposite compare type</returns>
+	CompareType GetSwappedCompareType(CompareType type);
+
+	/// <summary>
+	/// Do compare of two constant values at compile-time
+	/// </summary>
+	/// <param name="type">Compare type</param>
+	/// <param name="op1">Operand 1</param>
+	/// <param name="op2">Operand 2</param>
+	/// <returns></returns>
+	bool IfConstexpr(CompareType type, int32_t op1, int32_t op2);
 
     // Output buffer management
     uint8_t* AllocateBuffer(uint32_t size);
@@ -246,10 +268,12 @@ private:
     uint32_t ip_src = 0;
     uint32_t ip_dst = 0;
 
-    std::map<uint32_t, uint32_t> ip_src_to_dst;
+	std::map<uint32_t, uint32_t> ip_src_to_dst;
 	std::list<DosBackpatchInstruction> backpatch;
-    std::list<DosVariableDescriptor> variables;
-    std::unordered_set<char*> strings;
+	std::list<DosVariableDescriptor> variables;
+	std::list<DosLabel> functions;
+	std::list<DosLabel> labels;
+	std::unordered_set<char*> strings;
 
     SymbolTableEntry* parent = nullptr;
 
