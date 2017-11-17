@@ -142,6 +142,12 @@ private:
 	/// <returns>Unused register</returns>
 	CpuRegister GetUnusedRegister();
 
+	/// <summary>
+	/// Find variable specified by name in variable list
+	/// </summary>
+	/// <param name="name">Name of variable</param>
+	/// <returns>Variable descriptor</returns>
+	DosVariableDescriptor* FindVariableByName(char* name);
 
     /// <summary>
     /// Save specified variable to stack, but keep it in register
@@ -224,6 +230,8 @@ private:
 	void EmitGotoLabel(InstructionEntry* i);
 	void EmitIf(InstructionEntry* i);
 	void EmitPush(InstructionEntry* i, std::stack<InstructionEntry*>& call_parameters);
+	void EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table, std::stack<InstructionEntry*>& call_parameters);
+	void EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_table);
 
     // Output buffer management
     uint8_t* AllocateBuffer(uint32_t size);
