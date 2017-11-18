@@ -21,22 +21,31 @@
     <ClInclude Include="parser.tab.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
-    <ClInclude Include="SymbolTableEntry.h">
-      <Filter>Hlavičkové soubory</Filter>
-    </ClInclude>
     <ClInclude Include="Compiler.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
     <ClInclude Include="CompilerException.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
-    <ClInclude Include="InstructionEntry.h">
-      <Filter>Hlavičkové soubory</Filter>
-    </ClInclude>
     <ClInclude Include="DosExeEmitter.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
+    <ClInclude Include="SymbolTableEntry.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
+    <ClInclude Include="InstructionEntry.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
     <ClInclude Include="ScopeType.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
+    <ClInclude Include="Log.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
+    <ClInclude Include="TinyFormat.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
   </ItemGroup>
@@ -53,11 +62,19 @@
     <ClCompile Include="DosExeEmitter.cpp">
       <Filter>Zdrojové soubory</Filter>
     </ClCompile>
+    <ClCompile Include="Log.cpp">
+      <Filter>Zdrojové soubory</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Bison Include="parser.y" />
   </ItemGroup>
   <ItemGroup>
     <Flex Include="lexer.l" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="c-like-to-x86.rc">
+      <Filter>Soubory zdrojů</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>

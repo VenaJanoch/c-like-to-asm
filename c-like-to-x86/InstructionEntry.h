@@ -81,7 +81,7 @@ struct InstructionEntry {
             InstructionOperand op1;
             InstructionOperand op2;
         } if_statement;
-
+        
         struct {
             SymbolTableEntry* symbol;
         } push_statement;
@@ -104,4 +104,15 @@ struct BackpatchList {
     InstructionEntry* entry;
 
     BackpatchList* next;
+};
+
+struct SwitchBackpatchList {
+    uint32_t source_ip;
+    bool is_default;
+    char* value;
+    SymbolType type;
+
+    uint32_t line;
+
+    SwitchBackpatchList* next;
 };

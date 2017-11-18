@@ -53,7 +53,7 @@ struct SymbolTableEntry {
     ExpressionType exp_type;
     int32_t ip, offset_or_size, parameter;
     char* parent;
-	bool is_temp;
+    bool is_temp;
 
     SymbolTableEntry* next;
 };

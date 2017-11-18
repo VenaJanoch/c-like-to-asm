@@ -1,10 +1,18 @@
-#include "Compiler.h"
+﻿#include "Compiler.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <malloc.h>
 #include <string>
 
+// Windows-specific includes
+#include "targetver.h"
+#include <windows.h>
+#include <shlwapi.h>
+
+#pragma comment(lib, "shlwapi")
+
+#include "Log.h"
 #include "DosExeEmitter.h"
 
 // Internal Bison functions and variables
@@ -25,31 +33,29 @@ Compiler::~Compiler()
 int Compiler::OnRun(int argc, wchar_t* argv[])
 {
     if (argc < 2) {
-        std::wcout << "You must specify at least output filename!";
+        Log::Write(LogType::Error, "You must specify at least output filename!");
         return EXIT_FAILURE;
     }
 
+    wchar_t* input_filename;
     wchar_t* output_filename;
 
     // Open input file
-    bool is_file;
-
     if (argc >= 3) {
         errno_t err = _wfopen_s(&yyin, argv[1], L"rb");
         if (err) {
-            wchar_t error[200];
-            _wcserror_s(error, err);
-            std::wcout << "Error while opening input file: " << error;
+            char error[200];
+            strerror_s(error, err);
+            Log::Write(LogType::Error, "Error while opening input file: %s", error);
             return EXIT_FAILURE;
         }
 
-        is_file = true;
-
+        input_filename = argv[1];
         output_filename = argv[2];
     } else {
         yyin = stdin;
-        is_file = false;
 
+        input_filename = nullptr;
         output_filename = argv[1];
     }
 
@@ -57,107 +63,143 @@ int Compiler::OnRun(int argc, wchar_t* argv[])
     FILE* outputExe;
     errno_t err = _wfopen_s(&outputExe, output_filename, L"wb");
     if (err) {
-        wchar_t error[200];
-        _wcserror_s(error, err);
-        std::wcout << "Error while creating executable: " << error;
+        char error[200];
+        strerror_s(error, err);
+        Log::Write(LogType::Error, "Error while creating output file: %s", error);
         return EXIT_FAILURE;
     }
 
-    FILE* outputAsm;
-    err = fopen_s(&outputAsm, "output.asm", "wb");
-    if (err) {
-        wchar_t error[200];
-        _wcserror_s(error, err);
-        std::wcout << "Error while creating assembly listing: " << error;
-        return EXIT_FAILURE;
+    // Set working directory
+    if (input_filename && PathRemoveFileSpec(input_filename)) {
+        SetCurrentDirectory(input_filename);
+
+        wchar_t path[MAX_PATH];
+        GetCurrentDirectory(MAX_PATH, path);
     }
 
     // Declare all shared functions
     DeclareSharedFunctions();
 
+    bool input_done = false;
+
     // Parse input file
     try {
-        Log("Parsing source code...");
+        if (input_filename) {
+            Log::Write(LogType::Info, "Parsing source code...");
+        } else {
+            Log::Write(LogType::Info, "Compiling application in interactive mode (press CTRL-Z to compile):");
+        }
+        Log::PushIndent();
+
+        if (!input_filename) {
+            Log::WriteSeparator();
+            Log::SetHighlight(true);
+        }
 
         do {
             yyparse();
         } while (!feof(yyin));
 
-        Log("Sorting symbol table...");
+        if (!input_filename) {
+            Log::SetHighlight(false);
+            Log::WriteSeparator();
+        }
+
+        input_done = true;
 
         SortSymbolTable();
 
-        Log("Creating executable file...");
+        Log::PopIndent();
+        Log::Write(LogType::Info, "Creating executable file...");
+        Log::PushIndent();
+
+#if _DEBUG
+        CreateDebugOutput();
+#endif
 
         // Parsing was successful, generate output files
         {
             DosExeEmitter emitter(this);
             emitter.EmitMzHeader();
-
-            Log("Compiling intermediate code to x86 instructions...");
-
-            emitter.EmitInstructions(instruction_stream_head, symbol_table);
-            emitter.EmitSharedFunctions(symbol_table);
+            emitter.EmitInstructions(instruction_stream_head);
+            emitter.EmitSharedFunctions();
             emitter.EmitStaticData();
             emitter.FixMzHeader(instruction_stream_head, stack_size);
             emitter.Save(outputExe);
-
-            CreateDebugOutput(outputAsm);
         }
 
-        Log("Done!");
+        Log::PopIndent();
+        Log::Write(LogType::Info, "Build was successful!");
     } catch (CompilerException& ex) {
         // Input file can't be parsed/compiled
+
         // Cleanup
-        if (is_file) {
+        if (!input_done && !input_filename) {
+            Log::SetHighlight(false);
+            Log::WriteSeparator();
+        }
+
+        if (yyin && yyin != stdin) {
             fclose(yyin);
         }
 
         fclose(outputExe);
-        fclose(outputAsm);
 
         // Show error message
+        const char* source;
+        switch (ex.GetSource()) {
+            case CompilerExceptionSource::Syntax:      source = "Syntax: ";      break;
+            case CompilerExceptionSource::Declaration: source = "Declaration: "; break;
+            case CompilerExceptionSource::Statement:   source = "Statement: ";   break;
+
+            default: source = ""; break;
+        }
+
         int32_t line = ex.GetLine();
         if (line >= 0) {
-            std::cout << "[" << line;
-
             int32_t column = ex.GetColumn();
             if (column >= 0) {
-                std::cout << ":" << column;
+                Log::Write(LogType::Error, "[%d:%d] %s%s", line, column, source, ex.what());
+            } else {
+                Log::Write(LogType::Error, "[%d:-] %s%s", line, source, ex.what());
             }
-
-            std::cout << "] ";
+        } else {
+            Log::Write(LogType::Error, "%s%s", source, ex.what());
         }
 
-        switch (ex.GetSource()) {
-            case CompilerExceptionSource::Syntax: std::cout << "Syntax Error: "; break;
-            case CompilerExceptionSource::Declaration: std::cout << "Declaration Error: "; break;
-            case CompilerExceptionSource::Statement: std::cout << "Statement Error: "; break;
+        Log::PopIndent();
+        Log::PopIndent();
+        Log::Write(LogType::Error, "Build failed!");
 
-            default: std::cout << "Error: "; break;
-        }
-
-        std::cout << ex.what() << "\r\n";
         return EXIT_FAILURE;
     }
 
-    if (is_file) {
+    if (yyin != stdin) {
         fclose(yyin);
     }
 
     fclose(outputExe);
-    fclose(outputAsm);
 
     ReleaseAll();
 
     return EXIT_SUCCESS;
 }
 
-void Compiler::CreateDebugOutput(FILE* output_file)
+#if _DEBUG
+void Compiler::CreateDebugOutput()
 {
+    FILE* output_debug;
+    errno_t err = fopen_s(&output_debug, "debug.txt", "wb");
+    if (err) {
+        char error[200];
+        strerror_s(error, err);
+        Log::Write(LogType::Error, "Error while creating intermediate code listing: %s", error);
+        return;
+    }
+
     // Generate symbol table
     {
-        fprintf(output_file, "Symbols\r\n"
+        fprintf(output_debug, "Symbols\r\n"
             "___________________________________________________________________________________________\r\n"
             ""
             "Name            Type         Return    IP       Offset/Size  Param.  Exp. Type  Parent\r\n"
@@ -166,7 +208,7 @@ void Compiler::CreateDebugOutput(FILE* output_file)
         SymbolTableEntry* current = symbol_table;
 
         while (current) {
-            fprintf(output_file,
+            fprintf(output_debug,
                 "%-15s %-12s %-9s %-8lu %-12lu %-7lu %-6s %-3s %s\r\n",
                 current->name,
                 SymbolTypeToString(current->type),
@@ -176,7 +218,7 @@ void Compiler::CreateDebugOutput(FILE* output_file)
                 current->parameter,
                 ExpressionTypeToString(current->exp_type),
                 (current->is_temp ? "[T]" : ""),
-                current->parent == nullptr ? "-" : current->parent);
+                (current->parent ? current->parent : "-"));
 
             current = current->next;
         }
@@ -184,7 +226,7 @@ void Compiler::CreateDebugOutput(FILE* output_file)
 
     // Generate sequential code
     {
-        fprintf(output_file, "\r\n\r\nStream\r\n"
+        fprintf(output_debug, "\r\n\r\nStream\r\n"
             "___________________________________________________________________________________________\r\n\r\n");
 
         SymbolTableEntry* parent = nullptr;
@@ -201,44 +243,79 @@ void Compiler::CreateDebugOutput(FILE* output_file)
                 }
 
                 if ((symbol->type == SymbolType::Function || symbol->type == SymbolType::EntryPoint || symbol->type == SymbolType::Label) && symbol->ip == ip) {
-                    fprintf(output_file, "%s:\r\n", symbol->name);
+                    fprintf(output_debug, "%s:\r\n", symbol->name);
                 }
 
                 symbol = symbol->next;
             }
 
             if (current->goto_ip == -1) {
-                fprintf(output_file, "    %-5llu %s\r\n", ip, current->content);
+                fprintf(output_debug, "    %-5llu %s\r\n", ip, current->content);
             } else {
-                fprintf(output_file, "    %-5llu %s %d\r\n", ip, current->content, current->goto_ip);
+                fprintf(output_debug, "    %-5llu %s %d\r\n", ip, current->content, current->goto_ip);
             }
 
             current = current->next;
             ip++;
         }
     }
-}
 
-void Compiler::ParseCompilerDirective(char* directive)
+    fclose(output_debug);
+}
+#endif
+
+void Compiler::ParseCompilerDirective(char* directive, std::function<bool(char* directive, char* param)> callback)
 {
-    int32_t name_length = 0;
     char* param = directive;
-    while (*param && *param != ' ') {
+    while (*param && *param != ' ' && *param != '\r' && *param != '\n') {
         param++;
-        name_length++;
     }
 
     if (*param == ' ') {
+        *param = '\0';
         param++;
 
-        // Parameter provided
-        if (memcmp(directive, "#stack", 6) == 0) {
-            stack_size = atoi(param);
+        while (*param == ' ') {
+            param++;
+        }
+
+        if (*param && *param != '\r' && *param != '\n') {
+            char* param_end = param;
+            while (*param_end && *param_end != '\r' && *param_end != '\n') {
+                param_end++;
+            }
+
+            *param_end = '\0';
+
+            // Parameter provided
+            if (strcmp(directive, "#stack") == 0) {
+                // Stack size directive
+                if (*param == '^') {
+                    uint32_t new_stack_size = atoi(param + 1);
+                    if (stack_size < new_stack_size) {
+                        stack_size = new_stack_size;
+                    }
+                } else {
+                    stack_size = atoi(param);
+                }
+                return;
+            }
+
+            if (callback(directive, param)) {
+                return;
+            }
+        } else {
+            if (callback(directive, nullptr)) {
+                return;
+            }
+        }
+    } else {
+        if (callback(directive, nullptr)) {
             return;
         }
     }
 
-    Log("Compiler directive \"" << directive << "\" cannot be resolved");
+    Log::Write(LogType::Warning, "Compiler directive \"%s\" cannot be resolved", directive);
 }
 
 InstructionEntry* Compiler::AddToStream(InstructionType type, char* code)
@@ -284,8 +361,8 @@ void Compiler::BackpatchStream(BackpatchList* list, int32_t new_ip)
             } else if (list->entry->type == InstructionType::If) {
                 list->entry->if_statement.ip = new_ip;
             } else {
-                // This type cannot be backpatched...
-                Log("Trying to backpatch unsupported instruction");
+                // This type cannot be backpatched
+                Log::Write(LogType::Error, "Trying to backpatch unsupported instruction");
 
                 ThrowOnUnreachableCode();
             }
@@ -298,6 +375,10 @@ void Compiler::BackpatchStream(BackpatchList* list, int32_t new_ip)
     }
 }
 
+SymbolTableEntry* Compiler::GetSymbols()
+{
+    return symbol_table;
+}
 
 SymbolTableEntry* Compiler::ToDeclarationList(SymbolType type, const char* name, ExpressionType exp_type)
 {
@@ -426,8 +507,6 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
     int32_t ip = function_ip;
     function_ip = NextIp();
 
-    //Log("P: Found function definition \"" << name << "\" (" << parameter_count << " parameters) at " << ip);
-
     uint32_t offset_internal = 0;
 
     if (strcmp(name, EntryPointName) == 0) {
@@ -443,8 +522,6 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
         SymbolTableEntry* current = declaration_queue;
         while (current) {
             int32_t size = current->offset_or_size;
-
-            //Log(" - " << current->name << " (" << size << " bytes)");
 
             AddSymbol(current->name, current->type, current->return_type,
                 current->exp_type, current->ip, offset_internal, 0, name, current->is_temp);
@@ -520,8 +597,6 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
 
             int32_t size = current->offset_or_size;
 
-            //Log(" - " << current->name << " (" << size << " bytes) at " << offset_internal);
-
             current->offset_or_size = offset_internal;
 
             offset_internal += size;
@@ -539,8 +614,6 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
         current = declaration_queue;
         while (current) {
             int32_t size = current->offset_or_size;
-
-            //Log(" - " << current->name << " (" << size << " bytes)");
 
             AddSymbol(current->name, current->type, current->return_type,
                 current->exp_type, current->ip, offset_internal, 0, name, current->is_temp);
@@ -572,8 +645,6 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
     while (current) {
         int32_t size = current->offset_or_size;
 
-        //Log(" - " << current->name << " (" << size << " bytes) at " << offset_internal);
-
         if (parameter_current < parameter_count) {
             parameter_current++;
             current->parameter = parameter_current;
@@ -598,8 +669,6 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
 
 void Compiler::AddFunctionPrototype(char* name, ReturnSymbolType return_type)
 {
-    //Log("P: Found function prototype \"" << name << "\" (" << parameter_count << " parameters)");
-
     if (strcmp(name, EntryPointName) == 0) {
         throw CompilerException(CompilerExceptionSource::Declaration, "Prototype for entry point is not allowed", yylineno, -1);
     }
@@ -1109,6 +1178,8 @@ void Compiler::SortSymbolTable()
         return;
     }
 
+    Log::Write(LogType::Info, "Sorting symbol table...");
+
     // Fix IP of first function
     SymbolTableEntry* symbol = symbol_table;
     while (symbol) {
@@ -1203,5 +1274,9 @@ void Compiler::DeclareSharedFunctions()
 
     // uint32 ReadUint32();
     AddSymbol("ReadUint32", SymbolType::SharedFunction, ReturnSymbolType::Uint32,
+        ExpressionType::None, 0, 0, 0, nullptr, false);
+
+    // string GetCommandLine();
+    AddSymbol("GetCommandLine", SymbolType::SharedFunction, ReturnSymbolType::String,
         ExpressionType::None, 0, 0, 0, nullptr, false);
 }

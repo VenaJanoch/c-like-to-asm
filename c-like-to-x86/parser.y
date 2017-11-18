@@ -401,9 +401,9 @@ matched_statement
 
             while (current) {
                 if (current->is_default) {
-					if (default_statement) {
-						ThrowOnUnreachableCode();
-					}
+                    if (default_statement) {
+                        ThrowOnUnreachableCode();
+                    }
 
                     default_statement = current;
                 } else {

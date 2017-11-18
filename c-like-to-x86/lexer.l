@@ -42,16 +42,16 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 %%
 
 <<EOF>> {
-	FILE* yyin_old = yyin;
+    FILE* yyin_old = yyin;
 
-	yypop_buffer_state();
+    yypop_buffer_state();
 
-	if (yyin_old != yyin && yyin_old != stdin) {
-		fclose(yyin_old);
-	}
+    if (yyin_old != yyin && yyin_old != stdin) {
+        fclose(yyin_old);
+    }
 
-	if (!YY_CURRENT_BUFFER) {
-		yyterminate();
+    if (!YY_CURRENT_BUFFER) {
+        yyterminate();
     }
 }
 
@@ -70,40 +70,40 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 {DIRECTIVE} {
     c.ParseCompilerDirective(yytext, [&](char* directive, char* param) {
-		LogDebug("L: Found preprocessor directive \"" << directive << "\"");
+        LogDebug("L: Found preprocessor directive \"" << directive << "\"");
 
-		if (param && strcmp(directive, "#include") == 0) {
-			// Include file directive
-			char* path_start = param;
-			if (*path_start == '"') {
-				path_start++;
-			}
+        if (param && strcmp(directive, "#include") == 0) {
+            // Include file directive
+            char* path_start = param;
+            if (*path_start == '"') {
+                path_start++;
+            }
 
-			char* path_end = path_start;
-			while (*path_end && *path_end != '"') {
-				path_end++;
-			}
+            char* path_end = path_start;
+            while (*path_end && *path_end != '"') {
+                path_end++;
+            }
 
-			char* path = new char[path_end - path_start + 1];
-			memcpy(path, path_start, path_end - path_start);
-			path[path_end - path_start] = '\0';
+            char* path = new char[path_end - path_start + 1];
+            memcpy(path, path_start, path_end - path_start);
+            path[path_end - path_start] = '\0';
 
-			errno_t err = fopen_s(&yyin, path, "rb");
+            errno_t err = fopen_s(&yyin, path, "rb");
 
-			delete path;
+            delete path;
 
-			if (err) {
-				throw CompilerException(CompilerExceptionSource::Unknown, "Cannot open include file");
-			}
+            if (err) {
+                throw CompilerException(CompilerExceptionSource::Unknown, "Cannot open include file");
+            }
 
-			yypush_buffer_state(yy_create_buffer(yyin, YY_BUF_SIZE));
+            yypush_buffer_state(yy_create_buffer(yyin, YY_BUF_SIZE));
 
             BEGIN(INITIAL);
-			return true;
+            return true;
         }
-	
-		return false;
-	});
+    
+        return false;
+    });
 }
 
 ^"-" {

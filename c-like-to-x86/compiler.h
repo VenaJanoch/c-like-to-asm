@@ -5,15 +5,12 @@
 #include <stdio.h>
 #include <iostream>
 #include <vector>
+#include <functional>
 
 #include "CompilerException.h"
 #include "InstructionEntry.h"
 #include "SymbolTableEntry.h"
 #include "ScopeType.h"
-
-#define LogVerbose(text) 
-//#define LogVerbose(text) { std::cout << text << "\r\n"; }
-#define Log(text) { std::cout << text << "\r\n"; }
 
 
 /// <summary>
@@ -70,10 +67,10 @@
         i->assignment.dst_value = dst->name;                                \
         i->assignment.op1.value = op1_.value;                               \
         i->assignment.op1.type = op1_.type;                                 \
-        i->assignment.op1.exp_type = op1_.exp_type;                  \
+        i->assignment.op1.exp_type = op1_.exp_type;                         \
         i->assignment.op2.value = op2_.value;                               \
         i->assignment.op2.type = op2_.type;                                 \
-        i->assignment.op2.exp_type = op2_.exp_type;                  \
+        i->assignment.op2.exp_type = op2_.exp_type;                         \
     }
 
 #define CreateIfWithBackpatch(backpatch, compare_type, op1_, op2_)          \
@@ -82,10 +79,10 @@
         backpatch->entry->if_statement.type = compare_type;                 \
         backpatch->entry->if_statement.op1.value = op1_.value;              \
         backpatch->entry->if_statement.op1.type = op1_.type;                \
-        backpatch->entry->if_statement.op1.exp_type = op1_.exp_type; \
+        backpatch->entry->if_statement.op1.exp_type = op1_.exp_type;        \
         backpatch->entry->if_statement.op2.value = op2_.value;              \
         backpatch->entry->if_statement.op2.type = op2_.type;                \
-        backpatch->entry->if_statement.op2.exp_type = op2_.exp_type; \
+        backpatch->entry->if_statement.op2.exp_type = op2_.exp_type;        \
     }
 
 #define CreateIfConstWithBackpatch(backpatch, compare_type, op1_, constant)     \
@@ -94,7 +91,7 @@
         backpatch->entry->if_statement.type = compare_type;                     \
         backpatch->entry->if_statement.op1.value = op1_.value;                  \
         backpatch->entry->if_statement.op1.type = op1_.type;                    \
-        backpatch->entry->if_statement.op1.exp_type = op1_.exp_type;     \
+        backpatch->entry->if_statement.op1.exp_type = op1_.exp_type;            \
         backpatch->entry->if_statement.op2.value = constant;                    \
         backpatch->entry->if_statement.op2.type = op1_.type;                    \
         backpatch->entry->if_statement.op2.exp_type = ExpressionType::Constant; \
@@ -109,15 +106,17 @@ public:
 
     int OnRun(int argc, wchar_t *argv[]);
 
-    void CreateDebugOutput(FILE* output_file);
+#if _DEBUG
+    void CreateDebugOutput();
+#endif
 
-
-    void ParseCompilerDirective(char* directive);
+    void ParseCompilerDirective(char* directive, std::function<bool(char* directive, char* param)> callback);
 
     InstructionEntry* AddToStream(InstructionType type, char* code);
     BackpatchList* AddToStreamWithBackpatch(InstructionType type, char* code);
     void BackpatchStream(BackpatchList* list, int32_t new_ip);
 
+    SymbolTableEntry* GetSymbols();
 
     SymbolTableEntry* ToDeclarationList(SymbolType type, const char* name, ExpressionType exp_type);
     void ToParameterList(SymbolType type, const char* name);

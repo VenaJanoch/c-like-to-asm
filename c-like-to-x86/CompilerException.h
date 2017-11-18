@@ -28,15 +28,15 @@ class CompilerException : public std::exception
 public:
     CompilerException(CompilerExceptionSource source, std::string message)
         : source(source),
-        message(message)
+          message(message)
     {
     }
 
     CompilerException(CompilerExceptionSource source, std::string message, int32_t line, int32_t column)
         : source(source),
-        message(message),
-        line(line),
-        column(column)
+          message(message),
+          line(line),
+          column(column)
     {
     }
 
