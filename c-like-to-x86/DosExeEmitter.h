@@ -8,27 +8,28 @@
 #include <map>
 #include <stack>
 #include <unordered_set>
+#include <functional>
 
 #include "Compiler.h"
 #include "InstructionEntry.h"
 #include "SymbolTableEntry.h"
-
 
 enum struct DosBackpatchType {
     Unknown,
 
     ToRel8,     // Relative address (8-bit)
     ToRel16,    // Relative address (16-bit)
-    ToDsAbs16,  // Absolute address with DS segment (16-bit)
+    ToDsAbs16,  // Absolute address to DS segment (16-bit)
 };
 
 enum struct DosBackpatchTarget {
     Unknown,
 
-    IP,
-    Label,
-    Function,
-    String
+    IP,         // Instruction pointer
+    Label,      // Named label
+    Function,   // Function
+    String,     // String
+    Static      // Static variable
 };
 
 struct DosBackpatchInstruction {
@@ -69,7 +70,6 @@ struct DosVariableDescriptor {
 
     char* value;
 
-    bool is_static;
     CpuRegister reg;
     int32_t location;
 
@@ -125,35 +125,56 @@ public:
     ~DosExeEmitter();
 
     void EmitMzHeader();
-    void EmitInstructions(InstructionEntry* instruction_stream, SymbolTableEntry* symbol_table);
-    void EmitSharedFunctions(SymbolTableEntry* symbol_table);
+    void EmitInstructions(InstructionEntry* instruction_stream);
+    void EmitSharedFunctions();
     void EmitStaticData();
+    void FixMzHeader(InstructionEntry* instruction_stream, uint32_t stack_size);
 
     void Save(FILE* stream);
 
 private:
+    void CreateVariableList(SymbolTableEntry* symbol_table);
 
-	void CreateVariableList(SymbolTableEntry* symbol_table);
+    /// <summary>
+    /// Return unused/free register, if all registers are referenced,
+    /// save and unreference least used register
+    /// </summary>
+    /// <returns>Unused register</returns>
+    CpuRegister GetUnusedRegister();
 
-	/// <summary>
-	/// Return unused/free register, if all registers are referenced,
-	/// save and unreference least used register
-	/// </summary>
-	/// <returns>Unused register</returns>
-	CpuRegister GetUnusedRegister();
+    /// <summary>
+    /// Return unused/free register, if all registers are referenced,
+    /// no register will be returned (None)
+    /// </summary>
+    /// <returns>Unused register; or None</returns>
+    CpuRegister TryGetUnusedRegister();
+    
+    /// <summary>
+    /// Find variable specified by name in variable list
+    /// </summary>
+    /// <param name="name">Name of variable</param>
+    /// <returns>Variable descriptor</returns>
+    DosVariableDescriptor* FindVariableByName(char* name);
 
-	/// <summary>
-	/// Find variable specified by name in variable list
-	/// </summary>
-	/// <param name="name">Name of variable</param>
-	/// <returns>Variable descriptor</returns>
-	DosVariableDescriptor* FindVariableByName(char* name);
+    /// <summary>
+    /// Find next reference to variable
+    /// </summary>
+    /// <param name="var">Variable descriptor</param>
+    /// <returns>Instruction with reference</returns>
+    InstructionEntry* FindNextVariableReference(DosVariableDescriptor* var);
+
+    /// <summary>
+    /// Find the end of current function
+    /// </summary>
+    /// <param name="symbol_table">Symbol table</param>
+    void RefreshParentEndIp(SymbolTableEntry* symbol_table);
 
     /// <summary>
     /// Save specified variable to stack, but keep it in register
     /// </summary>
-    /// <param name="var"></param>
-    void SaveVariable(DosVariableDescriptor* var);
+    /// <param name="var">Variable descriptor</param>
+    /// <param name="force">Force save (don't check references)</param>
+    void SaveVariable(DosVariableDescriptor* var, bool force);
 
     /// <summary>
     /// Save variable which uses specified register and unreference it
@@ -220,40 +241,44 @@ private:
     /// <param name="desired_size">Size of register</param>
     void ZeroRegister(CpuRegister reg, int32_t desired_size);
 
-	// Backpatching
-	void BackpatchAddresses();
-	void BackpatchLabels(DosLabel& label, DosBackpatchTarget target);
-	void CheckBackpatchListIsEmpty(DosBackpatchTarget target);
+    // Backpatching
+    void BackpatchAddresses();
+    void BackpatchLabels(DosLabel& label, DosBackpatchTarget target);
+    void CheckBackpatchListIsEmpty(DosBackpatchTarget target);
+    void CheckReturnStatementPresent();
 
-	// Instruction emitters
+    void ProcessSymbolLinkage(SymbolTableEntry* symbol_table);
+
+    // Instruction emitters
     void EmitEntryPointPrologue(SymbolTableEntry* function);
 
-	void EmitFunctionPrologue(SymbolTableEntry* function, SymbolTableEntry* symbol_table);
+    void EmitFunctionPrologue(SymbolTableEntry* function, SymbolTableEntry* symbol_table);
 
-	void EmitAssign(InstructionEntry* i);
-	void EmitGoto(InstructionEntry* i);
-	void EmitGotoLabel(InstructionEntry* i);
-	void EmitIf(InstructionEntry* i);
-	void EmitPush(InstructionEntry* i, std::stack<InstructionEntry*>& call_parameters);
-	void EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table, std::stack<InstructionEntry*>& call_parameters);
-	void EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_table);
+    void EmitAssign(InstructionEntry* i);
+    void EmitGoto(InstructionEntry* i);
+    void EmitGotoLabel(InstructionEntry* i);
+    void EmitIf(InstructionEntry* i);
+    void EmitPush(InstructionEntry* i, std::stack<InstructionEntry*>& call_parameters);
+    void EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table, std::stack<InstructionEntry*>& call_parameters);
+    void EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_table);
 
+    /// <summary>
+    /// Get opposite compare type, so operands can be swapped
+    /// </summary>
+    /// <param name="type">Compare type</param>
+    /// <returns>Opposite compare type</returns>
+    CompareType GetSwappedCompareType(CompareType type);
 
-	/// <summary>
-	/// Get opposite compare type, so operands can be swapped
-	/// </summary>
-	/// <param name="type">Compare type</param>
-	/// <returns>Opposite compare type</returns>
-	CompareType GetSwappedCompareType(CompareType type);
+    /// <summary>
+    /// Do compare of two constant values at compile-time
+    /// </summary>
+    /// <param name="type">Compare type</param>
+    /// <param name="op1">Operand 1</param>
+    /// <param name="op2">Operand 2</param>
+    /// <returns></returns>
+    bool IfConstexpr(CompareType type, int32_t op1, int32_t op2);
 
-	/// <summary>
-	/// Do compare of two constant values at compile-time
-	/// </summary>
-	/// <param name="type">Compare type</param>
-	/// <param name="op1">Operand 1</param>
-	/// <param name="op2">Operand 2</param>
-	/// <returns></returns>
-	bool IfConstexpr(CompareType type, int32_t op1, int32_t op2);
+    void EmitSharedFunction(char* name, std::function<void()> emitter);
 
     // Output buffer management
     uint8_t* AllocateBuffer(uint32_t size);
@@ -262,20 +287,24 @@ private:
     template<typename T>
     T* AllocateBuffer();
 
-
     Compiler* compiler;
 
     uint32_t ip_src = 0;
     uint32_t ip_dst = 0;
 
-	std::map<uint32_t, uint32_t> ip_src_to_dst;
-	std::list<DosBackpatchInstruction> backpatch;
-	std::list<DosVariableDescriptor> variables;
-	std::list<DosLabel> functions;
-	std::list<DosLabel> labels;
-	std::unordered_set<char*> strings;
+    uint32_t static_size = 0;
 
+    std::map<uint32_t, uint32_t> ip_src_to_dst;
+    std::list<DosBackpatchInstruction> backpatch;
+    std::list<DosVariableDescriptor> variables;
+    std::list<DosLabel> functions;
+    std::list<DosLabel> labels;
+    std::unordered_set<char*> strings;
+    
     SymbolTableEntry* parent = nullptr;
+    uint32_t parent_end_ip = 0;
+    InstructionEntry* current_instruction = nullptr;
+    bool was_return = false;
 
     uint8_t* buffer = nullptr;
     uint32_t buffer_offset = 0;
