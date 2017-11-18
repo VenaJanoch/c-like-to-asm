@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include "Log.h"
 #include "Compiler.h"
 #include "parser.tab.h"
 
@@ -28,7 +29,7 @@ NEWLINE (\n|\r\n)
 WHITESPACE (" "|\t)
 
 LINE_COMMENT ("//".*{NEWLINE})
-BLOCK_COMMENT ("/*".*"*/")
+BLOCK_COMMENT (\/\*([^*]|[\r\n]|(\*+([^*/]|[\r\n])))*\*+\/)
 
 DIRECTIVE ("#".*{NEWLINE})
 
@@ -39,6 +40,20 @@ STRING (\"[^\"]*\")
 IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 %%
+
+<<EOF>> {
+	FILE* yyin_old = yyin;
+
+	yypop_buffer_state();
+
+	if (yyin_old != yyin && yyin_old != stdin) {
+		fclose(yyin_old);
+	}
+
+	if (!YY_CURRENT_BUFFER) {
+		yyterminate();
+    }
+}
 
 ({WHITESPACE}+) {
     // Ignore whitespaces
@@ -54,34 +69,73 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 }
 
 {DIRECTIVE} {
-    LogVerbose("L: Found preprocessor directive \"" << yytext << "\"");
+    c.ParseCompilerDirective(yytext, [&](char* directive, char* param) {
+		LogDebug("L: Found preprocessor directive \"" << directive << "\"");
 
-    //c.ParseCompilerDirective(yytext);
+		if (param && strcmp(directive, "#include") == 0) {
+			// Include file directive
+			char* path_start = param;
+			if (*path_start == '"') {
+				path_start++;
+			}
+
+			char* path_end = path_start;
+			while (*path_end && *path_end != '"') {
+				path_end++;
+			}
+
+			char* path = new char[path_end - path_start + 1];
+			memcpy(path, path_start, path_end - path_start);
+			path[path_end - path_start] = '\0';
+
+			errno_t err = fopen_s(&yyin, path, "rb");
+
+			delete path;
+
+			if (err) {
+				throw CompilerException(CompilerExceptionSource::Unknown, "Cannot open include file");
+			}
+
+			yypush_buffer_state(yy_create_buffer(yyin, YY_BUF_SIZE));
+
+            BEGIN(INITIAL);
+			return true;
+        }
+	
+		return false;
+	});
 }
 
 ^"-" {
-    LogVerbose("L: Found unary minus");
+    LogDebug("L: Found unary minus");
 
     allow_unary = false;
     return U_MINUS;
 }
 
 ^"+" {
-    LogVerbose("L: Found unary plus");
+    LogDebug("L: Found unary plus");
 
     allow_unary = false;
     return U_PLUS;
 }
 
-("("|")"|"{"|"}"|"<"|">"|"="|";"|","|"!"|":") {
-    LogVerbose("L: Found " << yytext[0]);
+("("|"{"|"<"|">"|"="|";"|","|"!"|":") {
+    LogDebug("L: Found " << yytext[0]);
 
     allow_unary = true;
     return yytext[0];
 }
 
+(")"|"}") {
+    LogDebug("L: Found " << yytext[0]);
+
+    allow_unary = false;
+    return yytext[0];
+}
+
 ("/"|"*"|"%") {
-    LogVerbose("L: Found " << yytext[0]);
+    LogDebug("L: Found " << yytext[0]);
 
     allow_unary = true;
     return yytext[0];
@@ -89,12 +143,12 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 "-" {
     if (allow_unary) {
-        LogVerbose("L: Found unary minus");
+        LogDebug("L: Found unary minus");
 
         allow_unary = false;
         return U_MINUS;
     } else {
-        LogVerbose("L: Found minus");
+        LogDebug("L: Found minus");
 
         return yytext[0];
     }
@@ -102,172 +156,202 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 "+" {
     if (allow_unary) {
-        LogVerbose("L: Found unary plus");
+        LogDebug("L: Found unary plus");
 
         allow_unary = false;
         return U_PLUS;
     } else {
-        LogVerbose("L: Found plus");
+        LogDebug("L: Found plus");
 
         return yytext[0];
     }
 }
 
 "const" {
-    LogVerbose("L: Found \"const\"");
+    LogDebug("L: Found \"const\"");
 
     return CONST;
 }
 
 "static" {
-    LogVerbose("L: Found \"static\"");
+    LogDebug("L: Found \"static\"");
 
     return STATIC;
 }
 
 "void" {
-    LogVerbose("L: Found \"void\"");
+    LogDebug("L: Found \"void\"");
 
     return VOID;
 }
 
 "bool" {
-    LogVerbose("L: Found \"bool\"");
+    LogDebug("L: Found \"bool\"");
 
     return BOOL;
 }
 
 "uint8" {
-    LogVerbose("L: Found \"uint8\"");
+    LogDebug("L: Found \"uint8\"");
 
     return UINT8;
 }
 
 "uint16" {
-    LogVerbose("L: Found \"uint16\"");
+    LogDebug("L: Found \"uint16\"");
 
     return UINT16;
 }
 
 "uint32" {
-    LogVerbose("L: Found \"uint32\"");
+    LogDebug("L: Found \"uint32\"");
 
     return UINT32;
 }
 
 "string" {
-    LogVerbose("L: Found \"string\"");
+    LogDebug("L: Found \"string\"");
 
     return STRING;
 }
 
 "if" {
-    LogVerbose("L: Found \"if\"");
+    LogDebug("L: Found \"if\"");
 
     return IF;
 }
 
 "else" {
-    LogVerbose("L: Found \"else\"");
+    LogDebug("L: Found \"else\"");
 
     return ELSE;
 }
 
 "return" {
-    LogVerbose("L: Found \"return\"");
+    LogDebug("L: Found \"return\"");
 
     return RETURN;
 }
 
 "do" {
-    LogVerbose("L: Found \"do\"");
+    LogDebug("L: Found \"do\"");
 
     return DO;
 }
 
 "while" {
-    LogVerbose("L: Found \"while\"");
+    LogDebug("L: Found \"while\"");
 
     return WHILE;
 }
 
 "for" {
-    LogVerbose("L: Found \"for\"");
+    LogDebug("L: Found \"for\"");
 
     return FOR;
 }
 
+"switch" {
+    LogDebug("L: Found \"switch\"");
+
+    return SWITCH;
+}
+
+"case" {
+    LogDebug("L: Found \"case\"");
+
+    return CASE;
+}
+
+"default" {
+    LogDebug("L: Found \"default\"");
+
+    return DEFAULT;
+}
+
+"continue" {
+    LogDebug("L: Found \"continue\"");
+
+    return CONTINUE;
+}
+
+"break" {
+    LogDebug("L: Found \"break\"");
+
+    return BREAK;
+}
+
 "goto" {
-    LogVerbose("L: Found \"goto\"");
+    LogDebug("L: Found \"goto\"");
 
     return GOTO;
 }
 
 "++" {
-    LogVerbose("L: Found ++");
+    LogDebug("L: Found ++");
 
     return INC_OP;
 }
 
 "--" {
-    LogVerbose("L: Found --");
+    LogDebug("L: Found --");
 
     return DEC_OP;
 }
 
 "==" {
-    LogVerbose("L: Found ==");
+    LogDebug("L: Found ==");
 
     return EQUAL;
 }
 
 "!=" {
-    LogVerbose("L: Found !=");
+    LogDebug("L: Found !=");
 
     return NOT_EQUAL;
 }
 
 ">=" {
-    LogVerbose("L: Found >=");
+    LogDebug("L: Found >=");
 
     return GREATER_OR_EQUAL;
 }
 
 "<=" {
-    LogVerbose("L: Found <=");
+    LogDebug("L: Found <=");
 
     return LESS_OR_EQUAL;
 }
 
 "<<" {
-    LogVerbose("L: Found <<");
+    LogDebug("L: Found <<");
 
     return SHIFT_LEFT;
 }
 
 ">>" {
-    LogVerbose("L: Found >>");
+    LogDebug("L: Found >>");
 
     return SHIFT_RIGHT;
 }
 
 "&&" {
-    LogVerbose("L: Found &&");
+    LogDebug("L: Found &&");
 
     return LOG_AND;
 }
 
 "||" {
-    LogVerbose("L: Found ||");
+    LogDebug("L: Found ||");
 
     return LOG_OR;
 }
 
 {INTEGER} {
-    LogVerbose("L: Found integer constant \"" << yytext << "\"");
+    LogDebug("L: Found integer constant \"" << yytext << "\"");
 
     yylval.expression.value = _strdup(yytext);
-    yylval.expression.expression_type = ExpressionType::Constant;
+    yylval.expression.exp_type = ExpressionType::Constant;
 
     int32_t value = atoi(yytext);
     if (value == (int8_t)value || value == (uint8_t)value) {
@@ -283,41 +367,41 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 }
 
 {BOOL_TRUE} {
-    LogVerbose("L: Found bool constant \"true\"");
+    LogDebug("L: Found bool constant \"true\"");
 
     yylval.expression.value = _strdup("1");
-    yylval.expression.expression_type = ExpressionType::Constant;
+    yylval.expression.exp_type = ExpressionType::Constant;
     yylval.expression.type = SymbolType::Bool;
     allow_unary = false;
     return CONSTANT;
 }
 
 {BOOL_FALSE} {
-    LogVerbose("L: Found bool constant \"false\"");
+    LogDebug("L: Found bool constant \"false\"");
 
     yylval.expression.value = _strdup("0");
-    yylval.expression.expression_type = ExpressionType::Constant;
+    yylval.expression.exp_type = ExpressionType::Constant;
     yylval.expression.type = SymbolType::Bool;
     allow_unary = false;
     return CONSTANT;
 }
 
 {STRING} {
-    LogVerbose("L: Found string constant \"" << yytext << "\"");
+    LogDebug("L: Found string constant \"" << yytext << "\"");
 
     char* value = new char[yyleng - 1];
     memcpy(value, yytext + 1, yyleng - 2);
     value[yyleng - 2] = '\0';
 
     yylval.expression.value = value;
-    yylval.expression.expression_type = ExpressionType::Constant;
+    yylval.expression.exp_type = ExpressionType::Constant;
     yylval.expression.type = SymbolType::String;
     allow_unary = false;
     return CONSTANT;
 }
 
 {IDENTIFIER} {
-    LogVerbose("L: Found identifier \"" << yytext << "\"");
+    LogDebug("L: Found identifier \"" << yytext << "\"");
 
     yylval.string = _strdup(yytext);
     allow_unary = false;

@@ -6,6 +6,7 @@
 #include <string.h>
 #include <string>
 
+#include "Log.h"
 #include "Compiler.h"
 
 void yyerror(const char* s);
@@ -114,14 +115,14 @@ program_head
 program
     : jump_marker function
         {
-            LogVerbose("P: Processing single function");
+            LogDebug("P: Processing single function");
 
             $$.next_list = $1.next_list;
             c.BackpatchStream($2.next_list, c.NextIp());
         }
     | program function
         {
-            LogVerbose("P: Processing function in function list");
+            LogDebug("P: Processing function in function list");
 
             $$.next_list = $1.next_list;
             c.BackpatchStream($2.next_list, c.NextIp());
@@ -153,7 +154,7 @@ function
 function_body
     : '{' statement_list  '}'
         {
-            LogVerbose("P: Found function body");
+            LogDebug("P: Found function body");
 
             $$.next_list = $2.next_list;
         }
@@ -164,21 +165,21 @@ parameter_list
         {
             c.ToParameterList($1, $2);
 
-            LogVerbose("P: Found parameter");
+            LogDebug("P: Found parameter");
         }
     | parameter_list ',' declaration_type id
         {
             c.ToParameterList($3, $4);
 
-            LogVerbose("P: Found parameter list (end)");
+            LogDebug("P: Found parameter list (end)");
         }
     | VOID
         {
-            LogVerbose("P: Found VOID parameter");
+            LogDebug("P: Found VOID parameter");
         }
     |
         {
-            LogVerbose("P: Found no parameter");
+            LogDebug("P: Found no parameter");
         }
     ;
 
@@ -188,31 +189,31 @@ declaration_type
         {
             $$ = SymbolType::Bool;
 
-            LogVerbose("P: Found BOOL declaration_type");
+            LogDebug("P: Found BOOL declaration_type");
         }
     | UINT8
         {
             $$ = SymbolType::Uint8;
 
-            LogVerbose("P: Found UINT8 declaration_type");
+            LogDebug("P: Found UINT8 declaration_type");
         }
     | UINT16
         {
             $$ = SymbolType::Uint16;
 
-            LogVerbose("P: Found UINT16 declaration_type");
+            LogDebug("P: Found UINT16 declaration_type");
         }
     | UINT32
         {
             $$ = SymbolType::Uint32;
 
-            LogVerbose("P: Found UINT32 declaration_type");
+            LogDebug("P: Found UINT32 declaration_type");
         }
     | STRING
         {
             $$ = SymbolType::String;
 
-            LogVerbose("P: Found STRING declaration_type");
+            LogDebug("P: Found STRING declaration_type");
         }
     ;
 
@@ -222,37 +223,37 @@ return_type
         {
             $$ = ReturnSymbolType::Bool;
 
-            LogVerbose("P: Found BOOL return_type");
+            LogDebug("P: Found BOOL return_type");
         }
     | UINT8
         {
             $$ = ReturnSymbolType::Uint8;
 
-            LogVerbose("P: Found UINT8 return_type");
+            LogDebug("P: Found UINT8 return_type");
         }
     | UINT16
         {
             $$ = ReturnSymbolType::Uint16;
 
-            LogVerbose("P: Found UINT16 return_type");
+            LogDebug("P: Found UINT16 return_type");
         }
     | UINT32
         {
             $$ = ReturnSymbolType::Uint32;
 
-            LogVerbose("P: Found UINT32 return_type");
+            LogDebug("P: Found UINT32 return_type");
         }
     | STRING
         {
             $$ = ReturnSymbolType::String;
 
-            LogVerbose("P: Found STRING return_type");
+            LogDebug("P: Found STRING return_type");
         }
     | VOID
         {
             $$ = ReturnSymbolType::Void;
 
-            LogVerbose("P: Found VOID return_type");
+            LogDebug("P: Found VOID return_type");
         }
     ;
 
@@ -261,13 +262,13 @@ return_type
 statement_list
     : statement
         {
-            LogVerbose("P: Processing single statement in list statement list");
+            LogDebug("P: Processing single statement in list statement list");
 
             $$.next_list = $1.next_list;
         }
     | statement_list marker statement
         {
-            LogVerbose("P: Processing statement list");
+            LogDebug("P: Processing statement list");
 
             c.BackpatchStream($1.next_list, $2.ip);
             $$.next_list = $3.next_list;
@@ -277,26 +278,26 @@ statement_list
 statement
     : matched_statement
         {
-            LogVerbose("P: Processing matched statement");
+            LogDebug("P: Processing matched statement");
 
             $$.next_list = $1.next_list;
         }
     | unmatched_statement
         {
-            LogVerbose("P: Processing unmatched statement");
+            LogDebug("P: Processing unmatched statement");
 
             $$.next_list = $1.next_list;
         }
     | declaration_list
         {
-            LogVerbose("P: Processing declaration list");
+            LogDebug("P: Processing declaration list");
 
             // Nothing to backpatch here...
             $$.next_list = nullptr;
         }
     | goto_label
         {
-            LogVerbose("P: Processing goto label");
+            LogDebug("P: Processing goto label");
 
             // Nothing to backpatch here...
             $$.next_list = nullptr;
@@ -306,7 +307,7 @@ statement
 matched_statement
     : IF '(' assignment ')' marker matched_statement jump_marker ELSE marker matched_statement
         {
-            LogVerbose("P: Processing matched if..else");
+            LogDebug("P: Processing matched if..else");
 
             CheckIsIntOrBool($3, "Only integer and bool types are allowed in \"if\" statement", @3);
 
@@ -317,17 +318,14 @@ matched_statement
         }
     | assignment_with_declaration ';'
         {
-            LogVerbose("P: Processing matched assignment");
-
-            //c.BackpatchStream($1.true_list, 1);
-            //c.BackpatchStream($1.false_list, 0);
+            LogDebug("P: Processing matched assignment");
 
             // Nothing to backpatch here...
             $$.next_list = nullptr;
         }
     | RETURN ';'
         {
-            LogVerbose("P: Processing void return");
+            LogDebug("P: Processing void return");
 
             $$.next_list = nullptr;
             sprintf_s(output_buffer, "return");
@@ -336,7 +334,7 @@ matched_statement
         }
     | RETURN assignment ';'
         {
-            LogVerbose("P: Processing value return");
+            LogDebug("P: Processing value return");
 
             $$.next_list = nullptr;
             sprintf_s(output_buffer, "return %s", $2.value);
@@ -346,7 +344,7 @@ matched_statement
         }
     | WHILE continue_marker '(' assignment ')' marker break_marker matched_statement jump_marker marker
         {
-            LogVerbose("P: Processing matched while");
+            LogDebug("P: Processing matched while");
 
             CheckIsIntOrBool($4, "Only integer and bool types are allowed in \"while\" statement", @4);
 
@@ -360,7 +358,7 @@ matched_statement
         }
     | DO continue_marker break_marker statement WHILE '(' marker assignment ')' ';' marker
         {
-            LogVerbose("P: Processing matched do..while");
+            LogDebug("P: Processing matched do..while");
 
             CheckIsIntOrBool($8, "Only integer and bool types are allowed in \"while\" statement", @8);
 
@@ -373,7 +371,7 @@ matched_statement
         }
     | FOR '(' assignment_with_declaration ';' marker assignment ';' continue_marker assignment jump_marker ')' marker break_marker matched_statement jump_marker marker
         {
-            LogVerbose("P: Processing matched for");
+            LogDebug("P: Processing matched for");
 
             CheckIsInt($3, "Integer assignment is required in the first part of \"for\" statement", @3);
             CheckIsBool($6, "Bool expression is required in the middle part of \"for\" statement", @6);
@@ -392,7 +390,7 @@ matched_statement
         }
     | SWITCH '(' switch_next assignment ')' '{' break_marker switch_statement '}' switch_next
         {
-            LogVerbose("P: Processing switch statement");
+            LogDebug("P: Processing switch statement");
         
             CheckIsInt($4, "Only integer types are allowed in \"switch\" statement", @4);
 
@@ -403,6 +401,10 @@ matched_statement
 
             while (current) {
                 if (current->is_default) {
+					if (default_statement) {
+						ThrowOnUnreachableCode();
+					}
+
                     default_statement = current;
                 } else {
                     sprintf_s(output_buffer, "if (%s == %s) goto", $4.value, current->value);
@@ -460,22 +462,23 @@ matched_statement
         }
     | GOTO id ';'
         {
-            LogVerbose("P: Processing goto command");
+            LogDebug("P: Processing goto command");
 
             $$.next_list = nullptr;
-            sprintf_s(output_buffer, "goto %s", $2);
+
+            sprintf_s(output_buffer, "goto \"%s\"", $2);
             InstructionEntry* i = c.AddToStream(InstructionType::GotoLabel, output_buffer);
             i->goto_label_statement.label = $2;
         }
     | '{' statement_list '}'
         {
-            LogVerbose("P: Processing statement block");
+            LogDebug("P: Processing statement block");
 
             $$.next_list = $2.next_list;
         }
     | '{' '}'
         {        
-            LogVerbose("P: Processing empty block");
+            LogDebug("P: Processing empty block");
 
             $$.next_list = NULL;
         }
@@ -484,7 +487,7 @@ matched_statement
 unmatched_statement
     : IF '(' assignment ')' marker statement
         {
-            LogVerbose("P: Processing unmatched if");
+            LogDebug("P: Processing unmatched if");
 
             CheckIsIntOrBool($3, "Only integer and bool types are allowed in \"if\" statement", @3);
 
@@ -493,7 +496,7 @@ unmatched_statement
         }
     | WHILE continue_marker '(' assignment ')' marker break_marker unmatched_statement jump_marker marker
         {
-            LogVerbose("P: Processing unmatched while");
+            LogDebug("P: Processing unmatched while");
 
             CheckIsIntOrBool($4, "Only integer and bool types are allowed in \"while\" statement", @4);
 
@@ -507,7 +510,7 @@ unmatched_statement
         }
     | FOR '(' assignment_with_declaration ';' marker assignment ';' continue_marker assignment jump_marker ')' marker break_marker unmatched_statement jump_marker marker
         {
-            LogVerbose("P: Processing unmatched for");
+            LogDebug("P: Processing unmatched for");
 
             CheckIsInt($3, "Integer assignment is required in the first part of \"for\" statement", @3);
             CheckIsBool($6, "Bool expression is required in the middle part of \"for\" statement", @6);
@@ -527,7 +530,7 @@ unmatched_statement
 
     | IF '(' assignment ')' marker matched_statement jump_marker ELSE marker unmatched_statement
         {
-            LogVerbose("P: Processing unmatched if..else");
+            LogDebug("P: Processing unmatched if..else");
 
             CheckIsIntOrBool($3, "Only integer and bool types are allowed in \"if\" statement", @3);
 
@@ -612,7 +615,7 @@ case_list
 declaration_list
     : declaration ';'
         {
-            LogVerbose("P: Found declaration");
+            LogDebug("P: Found declaration");
         }
     ;
 
@@ -622,14 +625,14 @@ declaration
             $$ = $1;
             c.ToDeclarationList($1, $2, ExpressionType::Variable);
 
-            LogVerbose("P: Found variable declaration");
+            LogDebug("P: Found variable declaration");
         }
     | declaration ',' id
         {
             CheckTypeIsValid($1, @1);
             c.ToDeclarationList($1, $3, ExpressionType::Variable);
 
-            LogVerbose("P: Found multiple declarations");
+            LogDebug("P: Found multiple declarations");
         }
     ;
 
@@ -637,7 +640,7 @@ declaration
 static_declaration_list
     : static_declaration ';'
         {
-            LogVerbose("P: Found static declaration");
+            LogDebug("P: Found static declaration");
         }
     ;
 
@@ -647,14 +650,14 @@ static_declaration
             $$ = $2;
             c.AddStaticVariable($2, $3);
 
-            LogVerbose("P: Found static variable declaration");
+            LogDebug("P: Found static variable declaration");
         }
     | STATIC static_declaration ',' id
         {
             CheckTypeIsValid($2, @2);
             c.AddStaticVariable($2, $4);
 
-            LogVerbose("P: Found multiple static declarations");
+            LogDebug("P: Found multiple static declarations");
         }
     ;
 
@@ -662,13 +665,13 @@ static_declaration
 assignment
     : expression
         {
-            LogVerbose("P: Found expression as assignment " << ($1.value ? $1.value : "???"));
+            LogDebug("P: Found expression as assignment " << ($1.value ? $1.value : "???"));
 
             $$ = $1;
         }
-    | id '=' expression
+    | id '=' assignment
         {
-            LogVerbose("P: Found assignment");
+            LogDebug("P: Found assignment");
 
             SymbolTableEntry* decl = c.GetParameter($1);
             if (!decl) {
@@ -714,13 +717,13 @@ assignment
 assignment_with_declaration
     : assignment
         {
-            LogVerbose("P: Found assignment without declaration \"" << ($1.value ? $1.value : "???") << "\"");
+            LogDebug("P: Found assignment without declaration \"" << ($1.value ? $1.value : "???") << "\"");
 
             $$ = $1;
         }
     | CONST declaration_type id '=' expression
         {
-            LogVerbose("P: Found const. variable declaration with assignment \"" << $3 << "\"");
+            LogDebug("P: Found const. variable declaration with assignment \"" << $3 << "\"");
 
             if ($5.exp_type != ExpressionType::Constant) {
                 std::string message = "Cannot assign non-constant value to variable \"";
@@ -755,7 +758,7 @@ assignment_with_declaration
         }
     | declaration_type id '=' expression
         {
-            LogVerbose("P: Found variable declaration with assignment \"" << $2 << "\"");
+            LogDebug("P: Found variable declaration with assignment \"" << $2 << "\"");
 
             if (!c.CanImplicitCast($1, $4.type, $4.exp_type)) {
                 std::string message = "Cannot assign to variable \"";
@@ -785,7 +788,7 @@ assignment_with_declaration
 expression
     : INC_OP expression
         {
-            LogVerbose("P: Processing increment");
+            LogDebug("P: Processing increment");
 
             CheckIsInt($2, "Specified type is not allowed in arithmetic operations", @1);
 
@@ -826,7 +829,7 @@ expression
         }
     | DEC_OP expression
         {
-            LogVerbose("P: Processing decrement");
+            LogDebug("P: Processing decrement");
 
             CheckIsInt($2, "Specified type is not allowed in arithmetic operations", @1);
 
@@ -913,7 +916,7 @@ expression
         }
     | expression NOT_EQUAL expression
         {
-            LogVerbose("P: Processing logical not equal");
+            LogDebug("P: Processing logical not equal");
 
             CheckIsIntOrBool($1, "Only integer and bool types are allowed in comparsions", @1);
             CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
@@ -930,7 +933,7 @@ expression
         }
     | expression EQUAL expression
         {
-            LogVerbose("P: Processing logical equal");
+            LogDebug("P: Processing logical equal");
 
             CheckIsIntOrBool($1, "Only integer and bool types are allowed in comparsions", @1);
             CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
@@ -955,7 +958,7 @@ expression
         }
     | expression GREATER_OR_EQUAL expression
         {
-            LogVerbose("P: Processing logical greater or equal");
+            LogDebug("P: Processing logical greater or equal");
 
             CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
             CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
@@ -972,7 +975,7 @@ expression
         }
     | expression LESS_OR_EQUAL expression
         {
-            LogVerbose("P: Processing logical smaller or equal");
+            LogDebug("P: Processing logical smaller or equal");
 
             CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
             CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
@@ -990,7 +993,7 @@ expression
         }
     | expression '>' expression
         {
-            LogVerbose("P: Processing logical bigger");
+            LogDebug("P: Processing logical bigger");
 
             CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
             CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
@@ -1007,7 +1010,7 @@ expression
         }
     | expression '<' expression
         {
-            LogVerbose("P: Processing logical smaller");
+            LogDebug("P: Processing logical smaller");
 
             CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
             CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
@@ -1024,7 +1027,7 @@ expression
         }
     | expression SHIFT_LEFT expression
         {
-            LogVerbose("P: Processing left shift");
+            LogDebug("P: Processing left shift");
 
             CheckIsInt($1, "Only integer types are allowed in shift operations", @1);
             CheckIsInt($3, "Only integer types are allowed in shift operations", @3);
@@ -1043,7 +1046,7 @@ expression
         }
     | expression SHIFT_RIGHT expression
         {
-            LogVerbose("P: Processing left shift");
+            LogDebug("P: Processing left shift");
 
             CheckIsInt($1, "Only integer types are allowed in shift operations", @1);
             CheckIsInt($3, "Only integer types are allowed in shift operations", @3);
@@ -1063,7 +1066,7 @@ expression
     | expression '+' expression
         {
             if ($1.type == SymbolType::String && $3.type == SymbolType::String) {
-                LogVerbose("P: Processing string concatenation");
+                LogDebug("P: Processing string concatenation");
             
                 SymbolTableEntry* decl = c.GetUnusedVariable(SymbolType::String);
 
@@ -1077,7 +1080,7 @@ expression
                 $$.true_list = nullptr;
                 $$.false_list = nullptr;
             } else {
-                LogVerbose("P: Processing addition");
+                LogDebug("P: Processing addition");
 
                 SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
                 if (type == SymbolType::Unknown) {
@@ -1100,7 +1103,7 @@ expression
         }
     | expression '-' expression
         {
-            LogVerbose("P: Processing substraction");
+            LogDebug("P: Processing substraction");
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
             if (type == SymbolType::Unknown) {
@@ -1122,7 +1125,7 @@ expression
         }
     | expression '*' expression
         {
-            LogVerbose("P: Processing multiplication");
+            LogDebug("P: Processing multiplication");
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
             if (type == SymbolType::Unknown) {
@@ -1144,7 +1147,7 @@ expression
         }
     | expression '/' expression
         {
-            LogVerbose("P: Processing division");
+            LogDebug("P: Processing division");
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
             if (type == SymbolType::Unknown) {
@@ -1166,7 +1169,7 @@ expression
         }
     | expression '%' expression
         {
-            LogVerbose("P: Processing remainder");
+            LogDebug("P: Processing remainder");
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
             if (type == SymbolType::Unknown) {
@@ -1188,7 +1191,7 @@ expression
         }
     | '!' expression
         {
-            LogVerbose("P: Processing logical not");
+            LogDebug("P: Processing logical not");
 
             if ($2.type == SymbolType::Bool) {
                 $$ = $2;
@@ -1232,7 +1235,7 @@ expression
        }
     | CONSTANT
         {
-            LogVerbose("P: Processing constant");
+            LogDebug("P: Processing constant");
 
             $$.value = _strdup($1.value);
             $$.type = $1.type;
@@ -1242,13 +1245,13 @@ expression
         }
     | '(' expression ')'
         {
-            LogVerbose("P: Processing expression in parentheses");
+            LogDebug("P: Processing expression in parentheses");
 
             $$ = $2;
         }
     | id '(' call_parameter_list ')'
         {
-            LogVerbose("P: Processing function call with parameters");
+            LogDebug("P: Processing function call with parameters");
 
             SymbolTableEntry* func = c.GetFunction($1);
             if (!func || func->return_type == ReturnSymbolType::Unknown) {
@@ -1294,7 +1297,7 @@ expression
         }
     | id '('  ')'
         {
-            LogVerbose("P: Processing function call");
+            LogDebug("P: Processing function call");
 
             SymbolTableEntry* func = c.GetFunction($1);
             if (!func || func->return_type == ReturnSymbolType::Unknown) {
@@ -1340,7 +1343,7 @@ expression
         }
     | id
         {
-            LogVerbose("P: Processing identifier");
+            LogDebug("P: Processing identifier");
 
             SymbolTableEntry* param = c.GetParameter($1);
             if (!param) {
@@ -1360,7 +1363,7 @@ expression
 call_parameter_list
     : expression
         {
-            LogVerbose("P: Processing call parameter list");
+            LogDebug("P: Processing call parameter list");
 
             CheckTypeIsValid($1.type, @1);
 
@@ -1369,7 +1372,7 @@ call_parameter_list
         }
     | call_parameter_list ',' expression
         {
-            LogVerbose("P: Processing call parameter list");
+            LogDebug("P: Processing call parameter list");
 
             CheckTypeIsValid($3.type, @3);
 
@@ -1383,7 +1386,7 @@ call_parameter_list
 goto_label
     : id ':' marker
         {
-            LogVerbose("P: Found goto label \"" << $1 << "\" (" << $3.ip << ")");
+            LogDebug("P: Found goto label \"" << $1 << "\" (" << $3.ip << ")");
 
             c.AddLabel($1, $3.ip);
         }
@@ -1393,7 +1396,7 @@ goto_label
 id
     : IDENTIFIER
         {
-            LogVerbose("P: Found identifier \"" << $1 << "\"");
+            LogDebug("P: Found identifier \"" << $1 << "\"");
 
             $$ = _strdup(yytext);
         }
@@ -1401,7 +1404,7 @@ id
 
 marker
     :   {    
-            LogVerbose("P: Generating marker");
+            LogDebug("P: Generating marker");
 
             $$.ip = c.NextIp();
         }
@@ -1409,7 +1412,7 @@ marker
 
 jump_marker
     :   {
-            LogVerbose("P: Generating jump marker");
+            LogDebug("P: Generating jump marker");
 
             $$.ip = c.NextIp();
             sprintf_s(output_buffer, "goto");
@@ -1419,7 +1422,7 @@ jump_marker
 
 break_marker
     :   {
-            LogVerbose("P: Generating break marker");
+            LogDebug("P: Generating break marker");
 
             c.IncreaseScope(ScopeType::Break);
         }
@@ -1427,7 +1430,7 @@ break_marker
 
 continue_marker
     :   {
-            LogVerbose("P: Generating continue marker");
+            LogDebug("P: Generating continue marker");
 
             $$.ip = c.NextIp();
             c.IncreaseScope(ScopeType::Continue);
@@ -1436,7 +1439,7 @@ continue_marker
 
 switch_next
     :   {
-            LogVerbose("P: Generating switch next marker");
+            LogDebug("P: Generating switch next marker");
 
             sprintf_s(output_buffer, "goto");
             $$.next_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
