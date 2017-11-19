@@ -255,9 +255,20 @@ private:
     void EmitFunctionPrologue(SymbolTableEntry* function, SymbolTableEntry* symbol_table);
 
     void EmitAssign(InstructionEntry* i);
+    inline void EmitAssignSimple(InstructionEntry* i);
+    inline void EmitAssignNegation(InstructionEntry* i);
+    inline void EmitAssignAddSubtract(InstructionEntry* i);
+    inline void EmitAssignMultiply(InstructionEntry* i);
+    inline void EmitAssignDivide(InstructionEntry* i);
+    inline void EmitAssignShift(InstructionEntry* i);
+
     void EmitGoto(InstructionEntry* i);
     void EmitGotoLabel(InstructionEntry* i);
+
     void EmitIf(InstructionEntry* i);
+    inline void EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr);
+    inline void EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr);
+
     void EmitPush(InstructionEntry* i, std::stack<InstructionEntry*>& call_parameters);
     void EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table, std::stack<InstructionEntry*>& call_parameters);
     void EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_table);

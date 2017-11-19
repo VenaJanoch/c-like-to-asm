@@ -786,9 +786,15 @@ assignment
                     message, @1.first_line, @1.first_column);
             }
 
-			CheckIsInt($3, "Only integer types are allowed as array index", @3);
+			if (!decl->size) {
+                std::string message = "Variable \"";
+                message += $1;
+                message += "\" is not declared as array";
+                throw CompilerException(CompilerExceptionSource::Statement,
+                    message, @1.first_line, @1.first_column);
+            }
 
-			// ToDo: Check $1 is array
+			CheckIsInt($3, "Only integer types are allowed as array index", @3);
 
             sprintf_s(output_buffer, "%s[%s] = %s", $1, $3.value, $6.value);
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
@@ -1454,9 +1460,15 @@ expression
                     message, @1.first_line, @1.first_column);
             }
 
-			CheckIsInt($3, "Only integer types are allowed as array index", @3);
+			if (!param->size) {
+                std::string message = "Variable \"";
+                message += $1;
+                message += "\" is not declared as array";
+                throw CompilerException(CompilerExceptionSource::Statement,
+                    message, @1.first_line, @1.first_column);
+            }
 
-			// ToDo: Check $1 is array
+			CheckIsInt($3, "Only integer types are allowed as array index", @3);
 
             $$.value = $1;
             $$.type = param->type;
