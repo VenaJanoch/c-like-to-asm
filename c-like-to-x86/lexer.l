@@ -120,14 +120,14 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
     return U_PLUS;
 }
 
-("("|"{"|"<"|">"|"="|";"|","|"!"|":") {
+("("|"{"|"["|"<"|">"|"="|";"|","|"!"|":") {
     LogDebug("L: Found " << yytext[0]);
 
     allow_unary = true;
     return yytext[0];
 }
 
-(")"|"}") {
+(")"|"}"|"]") {
     LogDebug("L: Found " << yytext[0]);
 
     allow_unary = false;

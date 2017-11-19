@@ -43,10 +43,17 @@ enum struct CompareType {
     LessOrEqual
 };
 
+struct InstructionOperandIndex {
+    char* value;
+    SymbolType type;
+    ExpressionType exp_type;
+};
+
 struct InstructionOperand {
     char* value;
     SymbolType type;
     ExpressionType exp_type;
+    InstructionOperandIndex index;
 };
 
 struct InstructionEntry {
@@ -60,6 +67,7 @@ struct InstructionEntry {
             AssignType type;
 
             char* dst_value;
+            InstructionOperandIndex dst_index;
 
             InstructionOperand op1;
             InstructionOperand op2;

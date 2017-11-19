@@ -616,7 +616,7 @@ void DosExeEmitter::CreateVariableList(SymbolTableEntry* symbol_table)
 
 CpuRegister DosExeEmitter::GetUnusedRegister()
 {
-    // First four 32-registers are generally usable
+    // First four 32-bit registers are generally usable
     DosVariableDescriptor* register_used[4] { };
 
     std::list<DosVariableDescriptor>::iterator it = variables.begin();
@@ -657,7 +657,7 @@ CpuRegister DosExeEmitter::GetUnusedRegister()
 
 CpuRegister DosExeEmitter::TryGetUnusedRegister()
 {
-    // First four 32-registers are generally usable
+    // First four 32-bit registers are generally usable
     DosVariableDescriptor* register_used[4] { };
 
     std::list<DosVariableDescriptor>::iterator it = variables.begin();

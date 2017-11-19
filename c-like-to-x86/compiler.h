@@ -32,6 +32,15 @@
             "Specified type is not allowed", loc.first_line, loc.first_column); \
     }  
 
+#define CheckTypeIsArrayCompatible(type, message, loc)                      \
+    if (type != SymbolType::Uint8  &&                                       \
+        type != SymbolType::Uint16 &&                                       \
+        type != SymbolType::Uint32 &&                                       \
+        type != SymbolType::Bool) {                                         \
+        throw CompilerException(CompilerExceptionSource::Statement,         \
+            message, loc.first_line, loc.first_column);                     \
+    }
+
 #define CheckIsInt(exp, message, loc)                                       \
     if (exp.type != SymbolType::Uint8  &&                                   \
         exp.type != SymbolType::Uint16 &&                                   \
@@ -61,37 +70,37 @@
             "Specified expression must have constant value", loc.first_line, loc.first_column); \
     } 
 
+#define CopyOperand(to, from)                       \
+    {                                               \
+        to.value = from.value;                      \
+        to.type = from.type;                        \
+        to.exp_type = from.exp_type;                \
+        to.index.value = from.index.value;          \
+        to.index.type = from.index.type;            \
+        to.index.exp_type = from.index.exp_type;    \
+    }
+
 #define FillInstructionForAssign(i, assign_type, dst, op1_, op2_)           \
     {                                                                       \
         i->assignment.type = assign_type;                                   \
         i->assignment.dst_value = dst->name;                                \
-        i->assignment.op1.value = op1_.value;                               \
-        i->assignment.op1.type = op1_.type;                                 \
-        i->assignment.op1.exp_type = op1_.exp_type;                         \
-        i->assignment.op2.value = op2_.value;                               \
-        i->assignment.op2.type = op2_.type;                                 \
-        i->assignment.op2.exp_type = op2_.exp_type;                         \
+        CopyOperand(i->assignment.op1, op1_);                               \
+        CopyOperand(i->assignment.op2, op2_);                               \
     }
 
-#define CreateIfWithBackpatch(backpatch, compare_type, op1_, op2_)          \
-    {                                                                       \
+#define CreateIfWithBackpatch(backpatch, compare_type, op1_, op2_)              \
+    {                                                                           \
         backpatch = c.AddToStreamWithBackpatch(InstructionType::If, output_buffer); \
-        backpatch->entry->if_statement.type = compare_type;                 \
-        backpatch->entry->if_statement.op1.value = op1_.value;              \
-        backpatch->entry->if_statement.op1.type = op1_.type;                \
-        backpatch->entry->if_statement.op1.exp_type = op1_.exp_type;        \
-        backpatch->entry->if_statement.op2.value = op2_.value;              \
-        backpatch->entry->if_statement.op2.type = op2_.type;                \
-        backpatch->entry->if_statement.op2.exp_type = op2_.exp_type;        \
+        backpatch->entry->if_statement.type = compare_type;                     \
+        CopyOperand(backpatch->entry->if_statement.op1, op1_);                  \
+        CopyOperand(backpatch->entry->if_statement.op2, op2_);                  \
     }
 
 #define CreateIfConstWithBackpatch(backpatch, compare_type, op1_, constant)     \
     {                                                                           \
         backpatch = c.AddToStreamWithBackpatch(InstructionType::If, output_buffer); \
         backpatch->entry->if_statement.type = compare_type;                     \
-        backpatch->entry->if_statement.op1.value = op1_.value;                  \
-        backpatch->entry->if_statement.op1.type = op1_.type;                    \
-        backpatch->entry->if_statement.op1.exp_type = op1_.exp_type;            \
+        CopyOperand(backpatch->entry->if_statement.op1, op1_);                  \
         backpatch->entry->if_statement.op2.value = constant;                    \
         backpatch->entry->if_statement.op2.type = op1_.type;                    \
         backpatch->entry->if_statement.op2.exp_type = ExpressionType::Constant; \
@@ -118,12 +127,12 @@ public:
 
     SymbolTableEntry* GetSymbols();
 
-    SymbolTableEntry* ToDeclarationList(SymbolType type, const char* name, ExpressionType exp_type);
+    SymbolTableEntry* ToDeclarationList(SymbolType type, int32_t size, const char* name, ExpressionType exp_type);
     void ToParameterList(SymbolType type, const char* name);
     SymbolTableEntry* ToCallParameterList(SymbolTableEntry* queue, SymbolType type, const char* name, ExpressionType exp_type);
 
     void AddLabel(const char* name, int32_t ip);
-    void AddStaticVariable(SymbolType type, const char* name);
+    void AddStaticVariable(SymbolType type, int32_t size, const char* name);
     void AddFunction(char* name, ReturnSymbolType return_type);
     void AddFunctionPrototype(char* name, ReturnSymbolType return_type);
 
@@ -159,7 +168,7 @@ public:
     bool AddToScopeList(ScopeType type, BackpatchList* backpatch);
 
 private:
-    SymbolTableEntry* AddSymbol(const char* name, SymbolType type, ReturnSymbolType return_type,
+    SymbolTableEntry* AddSymbol(const char* name, SymbolType type, int32_t size, ReturnSymbolType return_type,
         ExpressionType exp_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent, bool is_temp);
 
     const char* SymbolTypeToString(SymbolType type);

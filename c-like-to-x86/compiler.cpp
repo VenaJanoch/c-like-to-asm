@@ -202,17 +202,18 @@ void Compiler::CreateDebugOutput()
         fprintf(output_debug, "Symbols\r\n"
             "___________________________________________________________________________________________\r\n"
             ""
-            "Name            Type         Return    IP       Offset/Size  Param.  Exp. Type  Parent\r\n"
+            "Name            Type         Return    Size  IP     Offset/Size  Param.  Exp. Type  Parent\r\n"
             "___________________________________________________________________________________________\r\n");
             
         SymbolTableEntry* current = symbol_table;
 
         while (current) {
             fprintf(output_debug,
-                "%-15s %-12s %-9s %-8lu %-12lu %-7lu %-6s %-3s %s\r\n",
+                "%-15s %-12s %-9s %-5lu %-6lu %-12lu %-7lu %-6s %-3s %s\r\n",
                 current->name,
                 SymbolTypeToString(current->type),
                 ReturnSymbolTypeToString(current->return_type),
+                current->size,
                 current->ip,
                 current->offset_or_size,
                 current->parameter,
@@ -380,11 +381,12 @@ SymbolTableEntry* Compiler::GetSymbols()
     return symbol_table;
 }
 
-SymbolTableEntry* Compiler::ToDeclarationList(SymbolType type, const char* name, ExpressionType exp_type)
+SymbolTableEntry* Compiler::ToDeclarationList(SymbolType type, int32_t size, const char* name, ExpressionType exp_type)
 {
     SymbolTableEntry* symbol = new SymbolTableEntry();
     symbol->name = _strdup(name);
     symbol->type = type;
+    symbol->size = size;
     symbol->exp_type = exp_type;
     symbol->offset_or_size = GetSymbolTypeSize(type);
 
@@ -477,9 +479,9 @@ void Compiler::AddLabel(const char* name, int32_t ip)
     }
 }
 
-void Compiler::AddStaticVariable(SymbolType type, const char* name)
+void Compiler::AddStaticVariable(SymbolType type, int32_t size, const char* name)
 {
-    SymbolTableEntry* entry = AddSymbol(name, type, ReturnSymbolType::Unknown,
+    SymbolTableEntry* entry = AddSymbol(name, type, size, ReturnSymbolType::Unknown,
         ExpressionType::Variable, 0, GetSymbolTypeSize(type), 0, nullptr, false);
 }
 
@@ -523,7 +525,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
         while (current) {
             int32_t size = current->offset_or_size;
 
-            AddSymbol(current->name, current->type, current->return_type,
+            AddSymbol(current->name, current->type, current->size, current->return_type,
                 current->exp_type, current->ip, offset_internal, 0, name, current->is_temp);
 
             offset_internal += size;
@@ -532,7 +534,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
             current = current->next;
         }
 
-        SymbolTableEntry* entry = AddSymbol(name, SymbolType::EntryPoint, return_type,
+        SymbolTableEntry* entry = AddSymbol(name, SymbolType::EntryPoint, 0, return_type,
             ExpressionType::None, ip, offset_internal, 0, nullptr, false);
 
         /*
@@ -615,7 +617,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
         while (current) {
             int32_t size = current->offset_or_size;
 
-            AddSymbol(current->name, current->type, current->return_type,
+            AddSymbol(current->name, current->type, current->size, current->return_type,
                 current->exp_type, current->ip, offset_internal, 0, name, current->is_temp);
 
             offset_internal += size;
@@ -652,7 +654,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
             current->parameter = 0;
         }
 
-        AddSymbol(current->name, current->type, current->return_type,
+        AddSymbol(current->name, current->type, current->size, current->return_type,
             current->exp_type, current->ip, offset_internal, current->parameter, name, current->is_temp);
 
         offset_internal += size;
@@ -661,7 +663,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
         current = current->next;
     }
 
-    AddSymbol(name, SymbolType::Function, return_type,
+    AddSymbol(name, SymbolType::Function, 0, return_type,
         ExpressionType::None, ip, offset_internal, parameter_count, nullptr, false);
 
     ReleaseDeclarationQueue();
@@ -696,7 +698,7 @@ void Compiler::AddFunctionPrototype(char* name, ReturnSymbolType return_type)
         }
     }
 
-    AddSymbol(name, SymbolType::FunctionPrototype, return_type,
+    AddSymbol(name, SymbolType::FunctionPrototype, 0, return_type,
         ExpressionType::None, 0, 0, parameter_count, nullptr, false);
 
     // Collect all function parameters
@@ -706,7 +708,7 @@ void Compiler::AddFunctionPrototype(char* name, ReturnSymbolType return_type)
         while (current) {
             parameter_current++;
 
-            AddSymbol(current->name, current->type, current->return_type,
+            AddSymbol(current->name, current->type, current->size, current->return_type,
                 current->exp_type, current->ip, current->offset_or_size, parameter_current, name, current->is_temp);
 
             current = current->next;
@@ -945,14 +947,14 @@ SymbolTableEntry* Compiler::GetUnusedVariable(SymbolType type)
         default: ThrowOnUnreachableCode();
     }
 
-    SymbolTableEntry* decl = ToDeclarationList(type, buffer, ExpressionType::Variable);
+    SymbolTableEntry* decl = ToDeclarationList(type, 0, buffer, ExpressionType::Variable);
     decl->is_temp = true;
     return decl;
 }
 
 
 
-SymbolTableEntry* Compiler::AddSymbol(const char* name, SymbolType type, ReturnSymbolType return_type,
+SymbolTableEntry* Compiler::AddSymbol(const char* name, SymbolType type, int32_t size, ReturnSymbolType return_type,
     ExpressionType exp_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent, bool is_temp)
 {
     if (!name || strlen(name) == 0) {
@@ -962,6 +964,7 @@ SymbolTableEntry* Compiler::AddSymbol(const char* name, SymbolType type, ReturnS
     SymbolTableEntry* symbol = new SymbolTableEntry();
     symbol->name = _strdup(name);
     symbol->type = type;
+    symbol->size = size;
     symbol->return_type = return_type;
     symbol->exp_type = exp_type;
     symbol->ip = ip;
@@ -1000,8 +1003,6 @@ const char* Compiler::SymbolTypeToString(SymbolType type)
         case SymbolType::Uint16: return "uint16";
         case SymbolType::Uint32: return "uint32";
         case SymbolType::String: return "string";
-
-        case SymbolType::Array: return "Array";
 
         default: return "-";
     }
@@ -1255,28 +1256,28 @@ void Compiler::SortSymbolTable()
 void Compiler::DeclareSharedFunctions()
 {
     // void PrintUint32(uint32 value);
-    AddSymbol("PrintUint32", SymbolType::SharedFunction, ReturnSymbolType::Void,
+    AddSymbol("PrintUint32", SymbolType::SharedFunction, 0, ReturnSymbolType::Void,
         ExpressionType::None, 0, 0, 1, nullptr, false);
 
-    AddSymbol("value", SymbolType::Uint32, ReturnSymbolType::Unknown,
+    AddSymbol("value", SymbolType::Uint32, 0, ReturnSymbolType::Unknown,
         ExpressionType::None, 0, 0, 1, "PrintUint32", false);
 
     // void PrintString(string value);
-    AddSymbol("PrintString", SymbolType::SharedFunction, ReturnSymbolType::Void,
+    AddSymbol("PrintString", SymbolType::SharedFunction, 0, ReturnSymbolType::Void,
         ExpressionType::None, 0, 0, 1, nullptr, false);
 
-    AddSymbol("value", SymbolType::String, ReturnSymbolType::Unknown,
+    AddSymbol("value", SymbolType::String, 0, ReturnSymbolType::Unknown,
         ExpressionType::None, 0, 0, 1, "PrintString", false);
 
     // void PrintNewLine();
-    AddSymbol("PrintNewLine", SymbolType::SharedFunction, ReturnSymbolType::Void,
+    AddSymbol("PrintNewLine", SymbolType::SharedFunction, 0, ReturnSymbolType::Void,
         ExpressionType::None, 0, 0, 0, nullptr, false);
 
     // uint32 ReadUint32();
-    AddSymbol("ReadUint32", SymbolType::SharedFunction, ReturnSymbolType::Uint32,
+    AddSymbol("ReadUint32", SymbolType::SharedFunction, 0, ReturnSymbolType::Uint32,
         ExpressionType::None, 0, 0, 0, nullptr, false);
 
     // string GetCommandLine();
-    AddSymbol("GetCommandLine", SymbolType::SharedFunction, ReturnSymbolType::String,
+    AddSymbol("GetCommandLine", SymbolType::SharedFunction, 0, ReturnSymbolType::String,
         ExpressionType::None, 0, 0, 0, nullptr, false);
 }

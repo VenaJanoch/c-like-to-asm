@@ -48,13 +48,24 @@ Compiler c;
 {
     char* string;
     int32_t integer;
-    SymbolType type;
+	SymbolType type;
     ReturnSymbolType return_type;
+
+	struct {
+		SymbolType type;
+		int32_t size;
+	} declaration;
 
     struct {
         char* value;
         SymbolType type;
         ExpressionType exp_type;
+		
+		struct {
+			char* value;
+			SymbolType type;
+			ExpressionType exp_type;
+		} index;
 
         BackpatchList* true_list;
         BackpatchList* false_list;
@@ -80,7 +91,8 @@ Compiler c;
 }
 
 %type <string> id IDENTIFIER
-%type <type> declaration_type declaration static_declaration
+%type <type> declaration_type
+%type <declaration> declaration static_declaration
 %type <return_type> return_type
 %type <expression> expression assignment_with_declaration assignment CONSTANT
 %type <statement> statement statement_list matched_statement unmatched_statement program function_body function
@@ -622,15 +634,33 @@ declaration_list
 declaration
     : declaration_type id
         {
-            $$ = $1;
-            c.ToDeclarationList($1, $2, ExpressionType::Variable);
+            $$.type = $1;
+			$$.size = 0;
+            c.ToDeclarationList($1, 0, $2, ExpressionType::Variable);
 
             LogDebug("P: Found variable declaration");
         }
+	| declaration_type '<' CONSTANT '>' id
+        {
+			CheckIsInt($3, "Array declaration must contain size of integer type", @3);
+			CheckTypeIsArrayCompatible($1, "Specified type cannot be used as array type", @1);
+
+			int32_t size = atoi($3.value);
+			if (size < 1 || size > UINT16_MAX) {
+				throw CompilerException(CompilerExceptionSource::Statement,
+					"Specified array size is out of bounds", @3.first_line, @3.first_column);
+			}
+
+            $$.type = $1;
+			$$.size = size;
+            c.ToDeclarationList($1, size, $5, ExpressionType::Variable);
+
+            LogDebug("P: Found array variable declaration");
+        }
     | declaration ',' id
         {
-            CheckTypeIsValid($1, @1);
-            c.ToDeclarationList($1, $3, ExpressionType::Variable);
+			$$ = $1;
+            c.ToDeclarationList($1.type, $1.size, $3, ExpressionType::Variable);
 
             LogDebug("P: Found multiple declarations");
         }
@@ -647,15 +677,33 @@ static_declaration_list
 static_declaration
     : STATIC declaration_type id
         {
-            $$ = $2;
-            c.AddStaticVariable($2, $3);
+            $$.type = $2;
+			$$.size = 0;
+            c.AddStaticVariable($2, 0, $3);
 
             LogDebug("P: Found static variable declaration");
         }
-    | STATIC static_declaration ',' id
+	| STATIC declaration_type '<' CONSTANT '>' id
         {
-            CheckTypeIsValid($2, @2);
-            c.AddStaticVariable($2, $4);
+			CheckIsInt($4, "Array declaration must contain size of integer type", @4);
+			CheckTypeIsArrayCompatible($2, "Specified type cannot be used as array type", @2);
+
+			int32_t size = atoi($4.value);
+			if (size < 1 || size > UINT16_MAX) {
+				throw CompilerException(CompilerExceptionSource::Statement,
+					"Specified array size is out of bounds", @4.first_line, @4.first_column);
+			}
+
+            $$.type = $2;
+			$$.size = size;
+            c.AddStaticVariable($2, size, $6);
+
+            LogDebug("P: Found static array variable declaration");
+        }
+    | static_declaration ',' id
+        {
+			$$ = $1;
+            c.AddStaticVariable($1.type, $1.size, $3);
 
             LogDebug("P: Found multiple static declarations");
         }
@@ -687,7 +735,7 @@ assignment
                 message += $1;
                 message += "\" is read-only";
                 throw CompilerException(CompilerExceptionSource::Statement,
-                    message, @3.first_line, @3.first_column);
+                    message, @1.first_line, @1.first_column);
             }
 
             if (!c.CanImplicitCast(decl->type, $3.type, $3.exp_type)) {
@@ -695,21 +743,69 @@ assignment
                 message += $1;
                 message += "\" because of type mismatch";
                 throw CompilerException(CompilerExceptionSource::Statement,
-                    message, @3.first_line, @3.first_column);
+                    message, @1.first_line, @1.first_column);
             }
 
             sprintf_s(output_buffer, "%s = %s", $1, $3.value);
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::None;
             i->assignment.dst_value = decl->name;
-            i->assignment.op1.value = $3.value;
-            i->assignment.op1.type = $3.type;
-            i->assignment.op1.exp_type = $3.exp_type;
+            CopyOperand(i->assignment.op1, $3);
 
             $$.type = decl->type;
             $$.true_list = $3.true_list;
             $$.exp_type = ExpressionType::Variable;
             $$.value = $1;
+        }
+	| id '[' expression ']' '=' assignment
+        {
+            LogDebug("P: Found array assignment");
+
+            SymbolTableEntry* decl = c.GetParameter($1);
+            if (!decl) {
+                std::string message = "Variable \"";
+                message += $1;
+                message += "\" is not declared in scope";
+                throw CompilerException(CompilerExceptionSource::Statement,
+                    message, @1.first_line, @1.first_column);
+            }
+
+            if (decl->exp_type == ExpressionType::Constant) {
+                std::string message = "Variable \"";
+                message += $1;
+                message += "\" is read-only";
+                throw CompilerException(CompilerExceptionSource::Statement,
+                    message, @1.first_line, @1.first_column);
+            }
+
+            if (!c.CanImplicitCast(decl->type, $6.type, $6.exp_type)) {
+                std::string message = "Cannot assign to variable \"";
+                message += $1;
+                message += "\" because of type mismatch";
+                throw CompilerException(CompilerExceptionSource::Statement,
+                    message, @1.first_line, @1.first_column);
+            }
+
+			CheckIsInt($3, "Only integer types are allowed as array index", @3);
+
+			// ToDo: Check $1 is array
+
+            sprintf_s(output_buffer, "%s[%s] = %s", $1, $3.value, $6.value);
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+            i->assignment.type = AssignType::None;
+            i->assignment.dst_value = decl->name;
+			i->assignment.dst_index.value = $3.value;
+			i->assignment.dst_index.type = $3.type;
+			i->assignment.dst_index.exp_type = $3.exp_type;
+			CopyOperand(i->assignment.op1, $6);
+
+            $$.true_list = $6.true_list;
+			$$.value = $1;
+			$$.type = decl->type;
+            $$.exp_type = ExpressionType::Variable;
+            $$.index.value = $3.value;
+			$$.index.type = $3.type;
+			$$.index.exp_type = $3.exp_type;
         }
     ;
 
@@ -730,7 +826,7 @@ assignment_with_declaration
                 message += $3;
                 message += "\"";
                 throw CompilerException(CompilerExceptionSource::Statement,
-                    message, @5.first_line, @5.first_column);
+                    message, @1.first_line, @1.first_column);
             }
 
             if (!c.CanImplicitCast($2, $5.type, $5.exp_type)) {
@@ -738,18 +834,16 @@ assignment_with_declaration
                 message += $3;
                 message += "\" because of type mismatch";
                 throw CompilerException(CompilerExceptionSource::Statement,
-                    message, @5.first_line, @5.first_column);
+                    message, @1.first_line, @1.first_column);
             }
 
-            SymbolTableEntry* decl = c.ToDeclarationList($2, $3, ExpressionType::Constant);
+            SymbolTableEntry* decl = c.ToDeclarationList($2, 0, $3, ExpressionType::Constant);
 
             sprintf_s(output_buffer, "%s = %s", $3, $5.value);
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::None;
             i->assignment.dst_value = decl->name;
-            i->assignment.op1.value = $5.value;
-            i->assignment.op1.type = $5.type;
-            i->assignment.op1.exp_type = $5.exp_type;
+            CopyOperand(i->assignment.op1, $5);
 
             $$.type = $2;
             $$.true_list = $5.true_list;
@@ -765,18 +859,16 @@ assignment_with_declaration
                 message += $2;
                 message += "\" because of type mismatch";
                 throw CompilerException(CompilerExceptionSource::Statement,
-                    message, @4.first_line, @4.first_column);
+                    message, @1.first_line, @1.first_column);
             }
 
-            SymbolTableEntry* decl = c.ToDeclarationList($1, $2, ExpressionType::None);
+            SymbolTableEntry* decl = c.ToDeclarationList($1, 0, $2, ExpressionType::None);
 
             sprintf_s(output_buffer, "%s = %s", $2, $4.value);
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::None;
             i->assignment.dst_value = decl->name;
-            i->assignment.op1.value = $4.value;
-            i->assignment.op1.type = $4.type;
-            i->assignment.op1.exp_type = $4.exp_type;
+            CopyOperand(i->assignment.op1, $4);
 
             $$.type = $1;
             $$.true_list = $4.true_list;
@@ -801,24 +893,28 @@ expression
                 sprintf_s(output_buffer, "%s = %s", decl->name, $2.value);
                 InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
                 i->assignment.dst_value = decl->name;
-                i->assignment.op1.value = $2.value;
-                i->assignment.op1.type = $2.type;
-                i->assignment.op1.exp_type = $2.exp_type;
+                CopyOperand(i->assignment.op1, $2);
 
                 $2.value = decl->name;
                 $2.type = decl->type;
                 $2.exp_type = ExpressionType::Variable;
             } else {
-                decl = c.GetParameter($2.value);
+                decl = nullptr;
             }
 
             sprintf_s(output_buffer, "%s = %s + 1", $2.value, $2.value);
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::Add;
-            i->assignment.dst_value = decl->name;
-            i->assignment.op1.value = $2.value;
-            i->assignment.op1.type = $2.type;
-            i->assignment.op1.exp_type = $2.exp_type;
+			if (decl) {
+				i->assignment.dst_value = decl->name;
+			} else {
+				i->assignment.dst_value = $2.value;
+				i->assignment.dst_index.value = $2.index.value;
+				i->assignment.dst_index.type = $2.index.type;
+				i->assignment.dst_index.exp_type = $2.index.exp_type;
+			}
+			CopyOperand(i->assignment.op1, $2);
+
             i->assignment.op2.value = _strdup("1");
             i->assignment.op2.type = $2.type;
             i->assignment.op2.exp_type = ExpressionType::Constant;
@@ -842,24 +938,28 @@ expression
                 sprintf_s(output_buffer, "%s = %s", decl->name, $2.value);
                 InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
                 i->assignment.dst_value = decl->name;
-                i->assignment.op1.value = $2.value;
-                i->assignment.op1.type = $2.type;
-                i->assignment.op1.exp_type = $2.exp_type;
+                CopyOperand(i->assignment.op1, $2);
 
                 $2.value = decl->name;
                 $2.type = decl->type;
                 $2.exp_type = ExpressionType::Variable;
             } else {
-                decl = c.GetParameter($2.value);
+                decl = nullptr;
             }
 
             sprintf_s(output_buffer, "%s = %s - 1", $2.value, $2.value);
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::Subtract;
-            i->assignment.dst_value = decl->name;
-            i->assignment.op1.value = $2.value;
-            i->assignment.op1.type = $2.type;
-            i->assignment.op1.exp_type = $2.exp_type;
+			if (decl) {
+				i->assignment.dst_value = decl->name;
+			} else {
+				i->assignment.dst_value = $2.value;
+				i->assignment.dst_index.value = $2.index.value;
+				i->assignment.dst_index.type = $2.index.type;
+				i->assignment.dst_index.exp_type = $2.index.exp_type;
+			}
+			CopyOperand(i->assignment.op1, $2);
+
             i->assignment.op2.value = _strdup("1");
             i->assignment.op2.type = $2.type;
             i->assignment.op2.exp_type = ExpressionType::Constant;
@@ -870,7 +970,7 @@ expression
         }
     | expression LOG_OR marker expression
         {
-            if (SymbolType::Bool != $1.type) {
+            if ($1.type != SymbolType::Bool) {
                 sprintf_s(output_buffer, "if (%s != 0) goto", $1.value);
                 CreateIfConstWithBackpatch($1.true_list, CompareType::NotEqual, $1, "0");
                 
@@ -878,7 +978,7 @@ expression
                 $1.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
             }
 
-            if (SymbolType::Bool != $4.type) {
+            if ($4.type != SymbolType::Bool) {
                 sprintf_s(output_buffer, "if (%s != 0) goto", $4.value);
                 CreateIfConstWithBackpatch($4.true_list, CompareType::NotEqual, $4, "0");
                 
@@ -893,7 +993,7 @@ expression
         }
     | expression LOG_AND marker expression
         {
-            if (SymbolType::Bool != $1.type) {
+            if ($1.type != SymbolType::Bool) {
                 sprintf_s(output_buffer, "if (%s != 0) goto", $1.value);
                 CreateIfConstWithBackpatch($1.true_list, CompareType::NotEqual, $1, "0");
 
@@ -901,7 +1001,7 @@ expression
                 $1.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
             }
 
-            if (SymbolType::Bool != $4.type) {
+            if ($4.type != SymbolType::Bool) {
                 sprintf_s(output_buffer, "if (%s != 0) goto", $4.value);
                 CreateIfConstWithBackpatch($4.true_list, CompareType::NotEqual, $4, "0");
 
@@ -1225,9 +1325,7 @@ expression
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::Negation;
             i->assignment.dst_value = decl->name;
-            i->assignment.op1.value = $2.value;
-            i->assignment.op1.type = $2.type;
-            i->assignment.op1.exp_type = $2.exp_type;
+			CopyOperand(i->assignment.op1, $2);
 
             $$ = $2;
             $$.value = decl->name;
@@ -1279,6 +1377,7 @@ expression
                     case ReturnSymbolType::Uint8: $$.type = SymbolType::Uint8; break;
                     case ReturnSymbolType::Uint16: $$.type = SymbolType::Uint16; break;
                     case ReturnSymbolType::Uint32: $$.type = SymbolType::Uint32; break;
+					case ReturnSymbolType::String: $$.type = SymbolType::String; break;
 
                     default: ThrowOnUnreachableCode();
                 }
@@ -1319,12 +1418,13 @@ expression
                 InstructionEntry* i = c.AddToStream(InstructionType::Call, output_buffer);
                 i->call_statement.target = func;
             } else {
-                // Has void return
+                // Has return value
                 switch (func->return_type) {
                     case ReturnSymbolType::Bool: $$.type = SymbolType::Bool; break;
                     case ReturnSymbolType::Uint8: $$.type = SymbolType::Uint8; break;
                     case ReturnSymbolType::Uint16: $$.type = SymbolType::Uint16; break;
                     case ReturnSymbolType::Uint32: $$.type = SymbolType::Uint32; break;
+					case ReturnSymbolType::String: $$.type = SymbolType::String; break;
 
                     default: ThrowOnUnreachableCode();
                 }
@@ -1340,6 +1440,30 @@ expression
                 i->call_statement.target = func;
                 i->call_statement.return_symbol = decl->name;
             }
+        }
+	| id '[' expression ']'
+        {
+            LogDebug("P: Processing array identifier");
+
+            SymbolTableEntry* param = c.GetParameter($1);
+            if (!param) {
+                std::string message = "Variable \"";
+                message += $1;
+                message += "\" is not declared in scope";
+                throw CompilerException(CompilerExceptionSource::Statement,
+                    message, @1.first_line, @1.first_column);
+            }
+
+			CheckIsInt($3, "Only integer types are allowed as array index", @3);
+
+			// ToDo: Check $1 is array
+
+            $$.value = $1;
+            $$.type = param->type;
+            $$.exp_type = ExpressionType::Variable;
+			$$.index.value = $3.value;
+			$$.index.type = $3.type;
+			$$.index.exp_type = $3.exp_type;
         }
     | id
         {

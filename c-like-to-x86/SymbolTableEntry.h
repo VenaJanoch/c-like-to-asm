@@ -20,9 +20,7 @@ enum struct SymbolType {
     Uint8,
     Uint16,
     Uint32,
-    String,
-
-    Array, // ToDo
+    String
 };
 
 /// <summary>
@@ -49,6 +47,7 @@ enum struct ExpressionType {
 struct SymbolTableEntry {
     char* name;
     SymbolType type;
+    int32_t size;
     ReturnSymbolType return_type;
     ExpressionType exp_type;
     int32_t ip, offset_or_size, parameter;
