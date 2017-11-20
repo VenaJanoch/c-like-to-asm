@@ -93,7 +93,7 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
             delete path;
 
             if (err) {
-                throw CompilerException(CompilerExceptionSource::Unknown, "Cannot open include file");
+                c.AddError(CompilerExceptionSource::Unknown, "Cannot open include file");
             }
 
             yypush_buffer_state(yy_create_buffer(yyin, YY_BUF_SIZE));

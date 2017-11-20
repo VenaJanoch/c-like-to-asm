@@ -4,13 +4,13 @@
 #include <stdexcept>
 
 // Common exceptions
-#define ThrowOnUnreachableCode()    \
+#define ThrowOnUnreachableCode(c)    \
     __debugbreak();                 \
-    throw CompilerException(CompilerExceptionSource::Compilation, "Unexpected compiler error");
+    (c)->AddError(CompilerExceptionSource::Compilation, "Unexpected compiler error");
 
-#define ThrowOnTooFarCall()         \
+#define ThrowOnTooFarCall(c)         \
     __debugbreak();                 \
-    throw CompilerException(CompilerExceptionSource::Compilation, "Compiler cannot generate that high address offset");
+    (c)->AddError(CompilerExceptionSource::Compilation, "Compiler cannot generate that high address offset");
 
 
 enum struct CompilerExceptionSource {

@@ -109,7 +109,7 @@ program_head
         {
             SymbolTableEntry* entry_point = c.FindSymbolByName(EntryPointName);
             if (!entry_point) {
-                throw CompilerException(CompilerExceptionSource::Declaration,
+                c.AddError(CompilerExceptionSource::Declaration,
                     "Entry point not found");
             }
 
@@ -414,7 +414,7 @@ matched_statement
             while (current) {
                 if (current->is_default) {
                     if (default_statement) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(&c);
                     }
 
                     default_statement = current;
@@ -455,7 +455,7 @@ matched_statement
             BackpatchList* b = c.AddToStreamWithBackpatch(InstructionType::Goto, "goto");
 
             if (!c.AddToScopeList(ScopeType::Break, b)) {
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     "Break is not inside a loop or switch statement", @1.first_line, @1.first_column);
             }
 
@@ -466,7 +466,7 @@ matched_statement
             BackpatchList* b = c.AddToStreamWithBackpatch(InstructionType::Goto, "goto");
 
             if (!c.AddToScopeList(ScopeType::Continue, b)) {
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     "Continue is not inside a loop statement", @1.first_line, @1.first_column);
             }
 
@@ -607,7 +607,7 @@ case_list
                     message += $3.value;
                     message += "\" was already defined at line ";
                     message += std::to_string(prev->line);
-                    throw CompilerException(CompilerExceptionSource::Statement,
+                    c.AddError(CompilerExceptionSource::Statement,
                         message, @3.first_line, @3.first_column);
                 }
 
@@ -647,7 +647,7 @@ declaration
 
 			int32_t size = atoi($3.value);
 			if (size < 1 || size > UINT16_MAX) {
-				throw CompilerException(CompilerExceptionSource::Statement,
+				c.AddError(CompilerExceptionSource::Statement,
 					"Specified array size is out of bounds", @3.first_line, @3.first_column);
 			}
 
@@ -690,7 +690,7 @@ static_declaration
 
 			int32_t size = atoi($4.value);
 			if (size < 1 || size > UINT16_MAX) {
-				throw CompilerException(CompilerExceptionSource::Statement,
+				c.AddError(CompilerExceptionSource::Statement,
 					"Specified array size is out of bounds", @4.first_line, @4.first_column);
 			}
 
@@ -726,7 +726,7 @@ assignment
                 std::string message = "Variable \"";
                 message += $1;
                 message += "\" is not declared in scope";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -734,7 +734,7 @@ assignment
                 std::string message = "Variable \"";
                 message += $1;
                 message += "\" is read-only";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -742,7 +742,7 @@ assignment
                 std::string message = "Cannot assign to variable \"";
                 message += $1;
                 message += "\" because of type mismatch";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -766,7 +766,7 @@ assignment
                 std::string message = "Variable \"";
                 message += $1;
                 message += "\" is not declared in scope";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -774,7 +774,7 @@ assignment
                 std::string message = "Variable \"";
                 message += $1;
                 message += "\" is read-only";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -782,7 +782,7 @@ assignment
                 std::string message = "Cannot assign to variable \"";
                 message += $1;
                 message += "\" because of type mismatch";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -790,7 +790,7 @@ assignment
                 std::string message = "Variable \"";
                 message += $1;
                 message += "\" is not declared as array";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -831,7 +831,7 @@ assignment_with_declaration
                 std::string message = "Cannot assign non-constant value to variable \"";
                 message += $3;
                 message += "\"";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -839,7 +839,7 @@ assignment_with_declaration
                 std::string message = "Cannot assign to variable \"";
                 message += $3;
                 message += "\" because of type mismatch";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -864,7 +864,7 @@ assignment_with_declaration
                 std::string message = "Cannot assign to variable \"";
                 message += $2;
                 message += "\" because of type mismatch";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -1190,7 +1190,7 @@ expression
 
                 SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
                 if (type == SymbolType::Unknown) {
-                    throw CompilerException(CompilerExceptionSource::Statement,
+                    c.AddError(CompilerExceptionSource::Statement,
                         "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
                 }
 
@@ -1213,7 +1213,7 @@ expression
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
             if (type == SymbolType::Unknown) {
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
             }
 
@@ -1235,7 +1235,7 @@ expression
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
             if (type == SymbolType::Unknown) {
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
             }
 
@@ -1257,7 +1257,7 @@ expression
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
             if (type == SymbolType::Unknown) {
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
             }
 
@@ -1279,7 +1279,7 @@ expression
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
             if (type == SymbolType::Unknown) {
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
             }
 
@@ -1310,7 +1310,7 @@ expression
                 sprintf_s(output_buffer, "goto");
                 $$.true_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
             } else {
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     "Specified type is not allowed in logical operations", @1.first_line, @1.first_column);
             }
         }
@@ -1362,7 +1362,7 @@ expression
                 std::string message = "Function \"";
                 message += $1;
                 message += "\" is not defined";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -1385,7 +1385,7 @@ expression
                     case ReturnSymbolType::Uint32: $$.type = SymbolType::Uint32; break;
 					case ReturnSymbolType::String: $$.type = SymbolType::String; break;
 
-                    default: ThrowOnUnreachableCode();
+                    default: ThrowOnUnreachableCode(&c);
                 }
 
                 SymbolTableEntry* decl = c.GetUnusedVariable($$.type);
@@ -1409,7 +1409,7 @@ expression
                 std::string message = "Function \"";
                 message += $1;
                 message += "\" is not defined";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -1432,7 +1432,7 @@ expression
                     case ReturnSymbolType::Uint32: $$.type = SymbolType::Uint32; break;
 					case ReturnSymbolType::String: $$.type = SymbolType::String; break;
 
-                    default: ThrowOnUnreachableCode();
+                    default: ThrowOnUnreachableCode(&c);
                 }
 
                 SymbolTableEntry* decl = c.GetUnusedVariable($$.type);
@@ -1456,7 +1456,7 @@ expression
                 std::string message = "Variable \"";
                 message += $1;
                 message += "\" is not declared in scope";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -1464,7 +1464,7 @@ expression
                 std::string message = "Variable \"";
                 message += $1;
                 message += "\" is not declared as array";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -1486,7 +1486,7 @@ expression
                 std::string message = "Variable \"";
                 message += $1;
                 message += "\" is not declared in scope";
-                throw CompilerException(CompilerExceptionSource::Statement,
+                c.AddError(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
 
@@ -1595,14 +1595,14 @@ void yyerror(const char* s)
 {
     if (memcmp(s, "syntax error", 12) == 0) {
         if (memcmp(s + 12, ", ", 2) == 0) {
-            throw CompilerException(CompilerExceptionSource::Syntax,
+            c.AddError(CompilerExceptionSource::Syntax,
                 s + 14, yylloc.first_line, yylloc.first_column);
         }
 
-        throw CompilerException(CompilerExceptionSource::Syntax,
+        c.AddError(CompilerExceptionSource::Syntax,
             s + 12, yylloc.first_line, yylloc.first_column);
     }
 
-    throw CompilerException(CompilerExceptionSource::Syntax,
+    c.AddError(CompilerExceptionSource::Syntax,
         s, yylloc.first_line, yylloc.first_column);
 }

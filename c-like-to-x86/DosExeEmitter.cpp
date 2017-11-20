@@ -118,7 +118,7 @@ void DosExeEmitter::EmitInstructions(InstructionEntry* instruction_stream)
             case InstructionType::Call:       EmitCall(current, symbol_table, call_parameters); break;
             case InstructionType::Return:     EmitReturn(current, symbol_table);    break;
 
-            default: ThrowOnUnreachableCode();
+            default: ThrowOnUnreachableCode(compiler);
         }
 
         current = current->next;
@@ -709,7 +709,7 @@ DosVariableDescriptor* DosExeEmitter::FindVariableByName(char* name)
         }
     }
 
-    ThrowOnUnreachableCode();
+    ThrowOnUnreachableCode(compiler);
 }
 
 InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor* var)
@@ -720,13 +720,13 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
     while (current && ip <= parent_end_ip) {
         switch (current->type) {
             case InstructionType::Assign: {
-                if (ip != ip_src &&
-                    (current->assignment.op1.exp_type == ExpressionType::Variable &&
-                     current->assignment.op1.value &&
-                     strcmp(var->symbol->name, current->assignment.op1.value) == 0) ||
-                    (current->assignment.op2.exp_type == ExpressionType::Variable &&
-                     current->assignment.op2.value &&
-                     strcmp(var->symbol->name, current->assignment.op2.value) == 0)) {
+				if (ip != ip_src &&
+					(current->assignment.op1.exp_type == ExpressionType::Variable &&
+						current->assignment.op1.value &&
+						strcmp(var->symbol->name, current->assignment.op1.value) == 0) ||
+						(current->assignment.op2.exp_type == ExpressionType::Variable &&
+							current->assignment.op2.value &&
+							strcmp(var->symbol->name, current->assignment.op2.value) == 0)) {
 
                     return current;
                 }
@@ -844,7 +844,7 @@ void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, bool force)
         }
 
         if (var->location == 0) {
-            ThrowOnUnreachableCode();
+            ThrowOnUnreachableCode(compiler);
         }
 
         switch (var_size) {
@@ -874,7 +874,7 @@ void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, bool force)
                 break;
             }
 
-            default: ThrowOnUnreachableCode();
+            default: ThrowOnUnreachableCode(compiler);
         }
     } else {
         switch (var_size) {
@@ -916,7 +916,7 @@ void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, bool force)
                 break;
             }
 
-            default: ThrowOnUnreachableCode();
+            default: ThrowOnUnreachableCode(compiler);
         }
     }
 
@@ -959,7 +959,7 @@ void DosExeEmitter::MarkRegisterAsDiscarded(CpuRegister reg)
     while (it != variables.end()) {
         if (it->reg == reg && (!it->symbol->parent || (it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0))) {
             if (it->is_dirty) {
-                ThrowOnUnreachableCode();
+                ThrowOnUnreachableCode(compiler);
             }
 
             it->reg = CpuRegister::None;
@@ -994,7 +994,7 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, SymbolType p
                 break;
             }
 
-            default: ThrowOnUnreachableCode();
+            default: ThrowOnUnreachableCode(compiler);
         }
 
         return;
@@ -1023,7 +1023,7 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, SymbolType p
                 break;
             }
 
-            default: ThrowOnUnreachableCode();
+            default: ThrowOnUnreachableCode(compiler);
         }
 
         return;
@@ -1051,10 +1051,10 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, SymbolType p
                     (uint32_t)((a + 4) - buffer), 0, 0, var->symbol->name
                 });
             } else if (var->location == 0) {
-                ThrowOnUnreachableCode();
+                ThrowOnUnreachableCode(compiler);
             } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
                 // Stack push using register (16-bit range)
-                ThrowOnTooFarCall();
+                ThrowOnTooFarCall(compiler);
             } else {
                 // Stack push using register (8-bit range)
                 CpuRegister reg_temp = GetUnusedRegister();
@@ -1085,10 +1085,10 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, SymbolType p
                     (uint32_t)((a + 2) - buffer), 0, 0, var->symbol->name
                 });
             } else if (var->location == 0) {
-                ThrowOnUnreachableCode();
+                ThrowOnUnreachableCode(compiler);
             } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
                 // Stack push (16-bit range)
-                ThrowOnTooFarCall();
+                ThrowOnTooFarCall(compiler);
             } else {
                 // Stack push (8-bit range)
                 uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -1111,10 +1111,10 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, SymbolType p
                     (uint32_t)((a + 3) - buffer), 0, 0, var->symbol->name
                 });
             } else if (var->location == 0) {
-                ThrowOnUnreachableCode();
+                ThrowOnUnreachableCode(compiler);
             } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
                 // Stack push (16-bit range)
-                ThrowOnTooFarCall();
+                ThrowOnTooFarCall(compiler);
             } else {
                 // Stack push (8-bit range)
                 uint8_t* a = AllocateBufferForInstruction(3 + 1);
@@ -1126,7 +1126,7 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, SymbolType p
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 }
 
@@ -1212,7 +1212,7 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                 break;
             }
 
-            default: ThrowOnUnreachableCode();
+            default: ThrowOnUnreachableCode(compiler);
         }
         return;
     }
@@ -1247,10 +1247,10 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                         (uint32_t)((a + 4) - buffer), 0, 0, var->symbol->name
                     });
                 } else if (var->location == 0) {
-                    ThrowOnUnreachableCode();
+                    ThrowOnUnreachableCode(compiler);
                 } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
                     // Stack to register copy (16-bit range)
-                    ThrowOnTooFarCall();
+                    ThrowOnTooFarCall(compiler);
                 } else {
                     // Stack to register copy (8-bit range)
                     uint8_t* a = AllocateBufferForInstruction(4 + 1);
@@ -1273,10 +1273,10 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                         (uint32_t)((a + 3) - buffer), 0, 0, var->symbol->name
                     });
                 } else if (var->location == 0) {
-                    ThrowOnUnreachableCode();
+                    ThrowOnUnreachableCode(compiler);
                 } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
                     // Stack to register copy (16-bit range)
-                    ThrowOnTooFarCall();
+                    ThrowOnTooFarCall(compiler);
                 } else {
                     // Stack to register copy (8-bit range)
                     uint8_t* a = AllocateBufferForInstruction(3 + 1);
@@ -1297,10 +1297,10 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                         (uint32_t)((a + 2) - buffer), 0, 0, var->symbol->name
                     });
                 } else if (var->location == 0) {
-                    ThrowOnUnreachableCode();
+                    ThrowOnUnreachableCode(compiler);
                 } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
                     // Stack to register copy (16-bit range)
-                    ThrowOnTooFarCall();
+                    ThrowOnTooFarCall(compiler);
                 } else {
                     // Stack to register copy (8-bit range)
                     uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -1325,10 +1325,10 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                         (uint32_t)((a + 3) - buffer), 0, 0, var->symbol->name
                     });
                 } else if (var->location == 0) {
-                    ThrowOnUnreachableCode();
+                    ThrowOnUnreachableCode(compiler);
                 } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
                     // Stack to register copy (16-bit range)
-                    ThrowOnTooFarCall();
+                    ThrowOnTooFarCall(compiler);
                 } else {
                     // Stack to register copy (8-bit range)
                     uint8_t* a = AllocateBufferForInstruction(3 + 1);
@@ -1349,10 +1349,10 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                         (uint32_t)((a + 2) - buffer), 0, 0, var->symbol->name
                     });
                 } else if (var->location == 0) {
-                    ThrowOnUnreachableCode();
+                    ThrowOnUnreachableCode(compiler);
                 } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
                     // Stack to register copy (16-bit range)
-                    ThrowOnTooFarCall();
+                    ThrowOnTooFarCall(compiler);
                 } else {
                     // Stack to register copy (8-bit range)
                     uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -1376,10 +1376,10 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                     (uint32_t)((a + 3) - buffer), 0, 0, var->symbol->name
                 });
             } else if (var->location == 0) {
-                ThrowOnUnreachableCode();
+                ThrowOnUnreachableCode(compiler);
             } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
                 // Stack to register copy (16-bit range)
-                ThrowOnTooFarCall();
+                ThrowOnTooFarCall(compiler);
             } else {
                 // Stack to register copy (8-bit range)
                 uint8_t* a = AllocateBufferForInstruction(3 + 1);
@@ -1391,7 +1391,7 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 }
 
@@ -1447,7 +1447,7 @@ void DosExeEmitter::LoadConstantToRegister(int32_t value, CpuRegister reg, int32
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 }
 
@@ -1477,7 +1477,7 @@ void DosExeEmitter::ZeroRegister(CpuRegister reg, int32_t desired_size)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 }
 
@@ -1499,7 +1499,7 @@ void DosExeEmitter::BackpatchAddresses()
                     break;
                 }
 
-                default: ThrowOnUnreachableCode();
+                default: ThrowOnUnreachableCode(compiler);
             }
 
             it = backpatch.erase(it);
@@ -1533,7 +1533,7 @@ void DosExeEmitter::BackpatchLabels(DosLabel& label, DosBackpatchTarget target)
                     break;
                 }
 
-                default: ThrowOnUnreachableCode();
+                default: ThrowOnUnreachableCode(compiler);
             }
 
             it = backpatch.erase(it);
@@ -1555,16 +1555,16 @@ void DosExeEmitter::CheckBackpatchListIsEmpty(DosBackpatchTarget target)
                 message += "\" called from \"";
                 message += parent->name;
                 message += "\" could not be resolved";
-                throw CompilerException(CompilerExceptionSource::Statement, message);
+                compiler->AddError(CompilerExceptionSource::Statement, message);
             } else if (target == DosBackpatchTarget::String) {
                 std::string message = "Label \"";
                 message += it->value;
                 message += "\" in function \"";
                 message += parent->name;
                 message += "\" could not be resolved";
-                throw CompilerException(CompilerExceptionSource::Statement, message);
+				compiler->AddError(CompilerExceptionSource::Statement, message);
             } else {
-                ThrowOnUnreachableCode();
+                ThrowOnUnreachableCode(compiler);
             }
         }
 
@@ -1584,7 +1584,7 @@ void DosExeEmitter::CheckReturnStatementPresent()
             std::string message = "Function \"";
             message += parent->name;
             message += "\" must have \"return\" as the last statement";
-            throw CompilerException(CompilerExceptionSource::Compilation, message);
+			compiler->AddError(CompilerExceptionSource::Compilation, message);
         }
     }
 }
@@ -1792,7 +1792,7 @@ void DosExeEmitter::EmitAssign(InstructionEntry* i)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 }
 
@@ -1854,7 +1854,7 @@ void DosExeEmitter::EmitAssignSimple(InstructionEntry* i)
 
             if (op1->symbol->exp_type == ExpressionType::Constant) {
                 if (op1->symbol->type == SymbolType::String) {
-                    ThrowOnUnreachableCode();
+                    ThrowOnUnreachableCode(compiler);
                     /*
                     // Load string address to register
                     reg_dst = GetUnusedRegister();
@@ -1887,7 +1887,7 @@ void DosExeEmitter::EmitAssignSimple(InstructionEntry* i)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 }
 
@@ -1932,7 +1932,7 @@ void DosExeEmitter::EmitAssignNegation(InstructionEntry* i)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     switch (dst_size) {
@@ -1956,7 +1956,7 @@ void DosExeEmitter::EmitAssignNegation(InstructionEntry* i)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     dst->reg = reg_dst;
@@ -1995,7 +1995,7 @@ void DosExeEmitter::EmitAssignAddSubtract(InstructionEntry* i)
                 (uint32_t)((a + 1) - buffer), 0, 0, concat
             });
         } else {
-            ThrowOnUnreachableCode();
+            ThrowOnUnreachableCode(compiler);
         }
 
         dst->is_dirty = true;
@@ -2087,10 +2087,10 @@ void DosExeEmitter::EmitAssignAddSubtract(InstructionEntry* i)
                             (uint32_t)((a + 2) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -2118,10 +2118,10 @@ void DosExeEmitter::EmitAssignAddSubtract(InstructionEntry* i)
                             (uint32_t)((a + 2) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -2151,10 +2151,10 @@ void DosExeEmitter::EmitAssignAddSubtract(InstructionEntry* i)
                             (uint32_t)((a + 3) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(3 + 1);
@@ -2166,12 +2166,12 @@ void DosExeEmitter::EmitAssignAddSubtract(InstructionEntry* i)
                     break;
                 }
 
-                default: ThrowOnUnreachableCode();
+                default: ThrowOnUnreachableCode(compiler);
             }
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     dst->reg = reg_dst;
@@ -2234,10 +2234,10 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                             (uint32_t)((a + 2) - buffer), 0, 0, op1->symbol->name
                         });
                     } else if (op1->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op1->location <= INT8_MIN || op1->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -2267,10 +2267,10 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                             (uint32_t)((a + 2) - buffer), 0, 0, op1->symbol->name
                         });
                     } else if (op1->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op1->location <= INT8_MIN || op1->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -2302,10 +2302,10 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                             (uint32_t)((a + 3) - buffer), 0, 0, op1->symbol->name
                         });
                     } else if (op1->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op1->location <= INT8_MIN || op1->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(3 + 1);
@@ -2317,7 +2317,7 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                     break;
                 }
 
-                default: ThrowOnUnreachableCode();
+                default: ThrowOnUnreachableCode(compiler);
             }
             break;
         }
@@ -2361,10 +2361,10 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                             (uint32_t)((a + 2) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -2394,10 +2394,10 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                             (uint32_t)((a + 2) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -2429,10 +2429,10 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                             (uint32_t)((a + 3) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(3 + 1);
@@ -2444,12 +2444,12 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                     break;
                 }
 
-                default: ThrowOnUnreachableCode();
+                default: ThrowOnUnreachableCode(compiler);
             }
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     dst->reg = CpuRegister::AX;
@@ -2482,7 +2482,7 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     // Have to set it here, because it is overwritten by "op2" sometimes
@@ -2510,7 +2510,7 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     switch (dst_size) {
@@ -2531,10 +2531,10 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
                     (uint32_t)((a + 2) - buffer), 0, 0, op2->symbol->name
                 });
             } else if (op2->location == 0) {
-                ThrowOnUnreachableCode();
+                ThrowOnUnreachableCode(compiler);
             } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                 // Stack to register copy (16-bit range)
-                ThrowOnTooFarCall();
+                ThrowOnTooFarCall(compiler);
             } else {
                 // Stack to register copy (8-bit range)
                 uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -2577,10 +2577,10 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
                     (uint32_t)((a + 2) - buffer), 0, 0, op2->symbol->name
                 });
             } else if (op2->location == 0) {
-                ThrowOnUnreachableCode();
+                ThrowOnUnreachableCode(compiler);
             } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                 // Stack to register copy (16-bit range)
-                ThrowOnTooFarCall();
+                ThrowOnTooFarCall(compiler);
             } else {
                 // Stack to register copy (8-bit range)
                 uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -2616,10 +2616,10 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
                     (uint32_t)((a + 3) - buffer), 0, 0, op2->symbol->name
                 });
             } else if (op2->location == 0) {
-                ThrowOnUnreachableCode();
+                ThrowOnUnreachableCode(compiler);
             } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                 // Stack to register copy (16-bit range)
-                ThrowOnTooFarCall();
+                ThrowOnTooFarCall(compiler);
             } else {
                 // Stack to register copy (8-bit range)
                 uint8_t* a = AllocateBufferForInstruction(3 + 1);
@@ -2633,7 +2633,7 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 }
 
@@ -2658,7 +2658,7 @@ void DosExeEmitter::EmitAssignShift(InstructionEntry* i)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     // Have to set it here, because it is overwritten by "op1" sometimes
@@ -2687,7 +2687,7 @@ void DosExeEmitter::EmitAssignShift(InstructionEntry* i)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     uint8_t type = (i->assignment.type == AssignType::ShiftLeft ? 4 : 5);
@@ -2713,7 +2713,7 @@ void DosExeEmitter::EmitAssignShift(InstructionEntry* i)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     dst->reg = reg_dst;
@@ -2726,7 +2726,7 @@ void DosExeEmitter::EmitGoto(InstructionEntry* i)
     // Cannot jump to itself, this should not happen,
     // because "goto" instructions are generated by compiler
     if (i->goto_statement.ip == ip_src) {
-        ThrowOnUnreachableCode();
+        ThrowOnUnreachableCode(compiler);
     }
 
     // Jumps to the next instruction are removed automatically as optimization
@@ -2838,12 +2838,12 @@ void DosExeEmitter::EmitIf(InstructionEntry* i)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
 DoBackpatch:
     if (!goto_ptr) {
-        ThrowOnUnreachableCode();
+        ThrowOnUnreachableCode(compiler);
     }
 
     if (i->if_statement.ip < ip_src) {
@@ -2903,7 +2903,7 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
                     break;
                 }
 
-                default: ThrowOnUnreachableCode();
+                default: ThrowOnUnreachableCode(compiler);
             }
             break;
         }
@@ -2942,10 +2942,10 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
                             (uint32_t)((a + 2) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -2973,10 +2973,10 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
                             (uint32_t)((a + 2) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -3006,10 +3006,10 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
                             (uint32_t)((a + 3) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(3 + 1);
@@ -3021,12 +3021,12 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
                     break;
                 }
 
-                default: ThrowOnUnreachableCode();
+                default: ThrowOnUnreachableCode(compiler);
             }
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     uint8_t* a = AllocateBufferForInstruction(1 + 1);
@@ -3071,7 +3071,7 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
                     break;
                 }
 
-                default: ThrowOnUnreachableCode();
+                default: ThrowOnUnreachableCode(compiler);
             }
             break;
         }
@@ -3111,10 +3111,10 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
                             (uint32_t)((a + 2) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -3141,10 +3141,10 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
                             (uint32_t)((a + 2) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -3173,10 +3173,10 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
                             (uint32_t)((a + 3) - buffer), 0, 0, op2->symbol->name
                         });
                     } else if (op2->location == 0) {
-                        ThrowOnUnreachableCode();
+                        ThrowOnUnreachableCode(compiler);
                     } else if (op2->location <= INT8_MIN || op2->location >= INT8_MAX) {
                         // Stack to register copy (16-bit range)
-                        ThrowOnTooFarCall();
+                        ThrowOnTooFarCall(compiler);
                     } else {
                         // Stack to register copy (8-bit range)
                         uint8_t* a = AllocateBufferForInstruction(3 + 1);
@@ -3188,12 +3188,12 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
                     break;
                 }
 
-                default: ThrowOnUnreachableCode();
+                default: ThrowOnUnreachableCode(compiler);
             }
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     uint8_t* a = AllocateBufferForInstruction(1 + 1);
@@ -3206,7 +3206,7 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
         case CompareType::GreaterOrEqual:   a[0] = 0x73; break; // jnb rel8
         case CompareType::LessOrEqual:      a[0] = 0x76; break; // jbe rel8
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 
     goto_ptr = a + 1;
@@ -3222,7 +3222,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
     // Parameter count mismatch, this should not happen,
     // because "call" instructions are generated by compiler
     if (i->call_statement.target->parameter != call_parameters.size()) {
-        ThrowOnUnreachableCode();
+        ThrowOnUnreachableCode(compiler);
     }
 
     // Emit "push" instructions (evaluated right to left)
@@ -3245,7 +3245,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
             // Can't find parameter, this should not happen,
             // because function parameters are generated by compiler
             if (!param_decl) {
-                ThrowOnUnreachableCode();
+                ThrowOnUnreachableCode(compiler);
             }
 
             switch (push->push_statement.symbol->exp_type) {
@@ -3295,7 +3295,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
 
                         //case SymbolType::Array: break;
 
-                        default: ThrowOnUnreachableCode();
+                        default: ThrowOnUnreachableCode(compiler);
                     }
 
                     break;
@@ -3307,7 +3307,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
                     break;
                 }
 
-                default: ThrowOnUnreachableCode();
+                default: ThrowOnUnreachableCode(compiler);
             }
         }
     }
@@ -3394,10 +3394,10 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
                         (uint32_t)((a + 2) - buffer), 0, 0, src->symbol->name
                     });
                 } else if (src->location == 0) {
-                    ThrowOnUnreachableCode();
+                    ThrowOnUnreachableCode(compiler);
                 } else if (src->location <= INT8_MIN || src->location >= INT8_MAX) {
                     // Stack to register copy (16-bit range)
-                    ThrowOnTooFarCall();
+                    ThrowOnTooFarCall(compiler);
                 } else {
                     // Stack to register copy (8-bit range)
                     uint8_t* a = AllocateBufferForInstruction(2 + 1);
@@ -3414,7 +3414,7 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
                 break;
             }
 
-            default: ThrowOnUnreachableCode();
+            default: ThrowOnUnreachableCode(compiler);
         }
     } else {
         // Standard function with "stdcall" calling convention,
@@ -3434,7 +3434,7 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
                     break;
                 }
 
-                default: ThrowOnUnreachableCode();
+                default: ThrowOnUnreachableCode(compiler);
             }
         }
 
@@ -3480,7 +3480,7 @@ CompareType DosExeEmitter::GetSwappedCompareType(CompareType type)
         case CompareType::GreaterOrEqual: return CompareType::LessOrEqual;
         case CompareType::LessOrEqual:    return CompareType::GreaterOrEqual;
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 }
 
@@ -3497,7 +3497,7 @@ bool DosExeEmitter::IfConstexpr(CompareType type, int32_t op1, int32_t op2)
         case CompareType::GreaterOrEqual: return (op1 >= op2);
         case CompareType::LessOrEqual:    return (op1 <= op2);
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(compiler);
     }
 }
 
@@ -3528,7 +3528,7 @@ void DosExeEmitter::EmitSharedFunction(char* name, std::function<void()> emitter
         symbol = symbol->next;
     }
 
-    ThrowOnUnreachableCode();
+    ThrowOnUnreachableCode(compiler);
 }
 
 uint8_t* DosExeEmitter::AllocateBuffer(uint32_t size)

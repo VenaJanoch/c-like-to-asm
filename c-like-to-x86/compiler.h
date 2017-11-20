@@ -28,7 +28,7 @@
     if (type != SymbolType::Uint8  && type != SymbolType::Uint16 &&             \
         type != SymbolType::Uint32 && type != SymbolType::Bool   &&             \
         type != SymbolType::String) {                                           \
-        throw CompilerException(CompilerExceptionSource::Statement,             \
+        c.AddError(CompilerExceptionSource::Statement,             \
             "Specified type is not allowed", loc.first_line, loc.first_column); \
     }  
 
@@ -37,7 +37,7 @@
         type != SymbolType::Uint16 &&                                       \
         type != SymbolType::Uint32 &&                                       \
         type != SymbolType::Bool) {                                         \
-        throw CompilerException(CompilerExceptionSource::Statement,         \
+        c.AddError(CompilerExceptionSource::Statement,         \
             message, loc.first_line, loc.first_column);                     \
     }
 
@@ -45,13 +45,13 @@
     if (exp.type != SymbolType::Uint8  &&                                   \
         exp.type != SymbolType::Uint16 &&                                   \
         exp.type != SymbolType::Uint32) {                                   \
-        throw CompilerException(CompilerExceptionSource::Statement,         \
+        c.AddError(CompilerExceptionSource::Statement,         \
             message, loc.first_line, loc.first_column);                     \
     }   
 
 #define CheckIsBool(exp, message, loc)                                      \
     if (exp.type != SymbolType::Bool) {                                     \
-        throw CompilerException(CompilerExceptionSource::Statement,         \
+        c.AddError(CompilerExceptionSource::Statement,         \
             message, loc.first_line, loc.first_column);                     \
     } 
 
@@ -60,13 +60,13 @@
         exp.type != SymbolType::Uint16 &&                                   \
         exp.type != SymbolType::Uint32 &&                                   \
         exp.type != SymbolType::Bool) {                                     \
-        throw CompilerException(CompilerExceptionSource::Statement,         \
+        c.AddError(CompilerExceptionSource::Statement,         \
             message, loc.first_line, loc.first_column);                     \
     }
 
 #define CheckIsConstant(exp, loc)                                           \
     if (exp.exp_type != ExpressionType::Constant) {                         \
-        throw CompilerException(CompilerExceptionSource::Statement,         \
+        c.AddError(CompilerExceptionSource::Statement,         \
             "Specified expression must have constant value", loc.first_line, loc.first_column); \
     } 
 
@@ -118,7 +118,8 @@ public:
 #if _DEBUG
     void CreateDebugOutput();
 #endif
-
+	void AddError(CompilerExceptionSource source, std::string message);
+	void AddError(CompilerExceptionSource source, std::string message, int32_t line, int32_t column);
     void ParseCompilerDirective(char* directive, std::function<bool(char* directive, char* param)> callback);
 
     InstructionEntry* AddToStream(InstructionType type, char* code);

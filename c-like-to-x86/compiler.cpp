@@ -265,6 +265,34 @@ void Compiler::CreateDebugOutput()
 }
 #endif
 
+void Compiler::AddError(CompilerExceptionSource source, std::string message)
+{
+	AddError(source, message, 0, 0);
+}
+void Compiler::AddError(CompilerExceptionSource source, std::string message, int32_t line, int32_t column)
+{
+	const char* source_str;
+	switch (source) {
+	case CompilerExceptionSource::Syntax:      source_str = "Syntax: ";      break;
+	case CompilerExceptionSource::Declaration: source_str = "Declaration: "; break;
+	case CompilerExceptionSource::Statement:   source_str = "Statement: ";   break;
+
+	default: source_str = ""; break;
+	}
+
+	
+	if (line >= 0) {
+		if (column >= 0) {
+			Log::Write(LogType::Error, "[%d:%d] %s%s", line, column, source_str, message);
+		} else {
+			Log::Write(LogType::Error, "[%d:-] %s%s", line, source_str, message);
+		}
+	} else {
+		Log::Write(LogType::Error, "%s%s", source_str, message);
+	}
+
+}
+
 void Compiler::ParseCompilerDirective(char* directive, std::function<bool(char* directive, char* param)> callback)
 {
     char* param = directive;
@@ -365,7 +393,7 @@ void Compiler::BackpatchStream(BackpatchList* list, int32_t new_ip)
                 // This type cannot be backpatched
                 Log::Write(LogType::Error, "Trying to backpatch unsupported instruction");
 
-                ThrowOnUnreachableCode();
+                ThrowOnUnreachableCode(this);
             }
         }
 
@@ -397,7 +425,7 @@ SymbolTableEntry* Compiler::ToDeclarationList(SymbolType type, int32_t size, con
                 std::string message = "Variable \"";
                 message += name;
                 message += "\" is already declared in this scope";
-                throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+                AddError(CompilerExceptionSource::Declaration, message, yylineno, -1);
             }
             entry = entry->next;
         }
@@ -426,7 +454,7 @@ void Compiler::ToParameterList(SymbolType type, const char* name)
                 std::string message = "Parameter \"";
                 message += name;
                 message += "\" is already declared in this scope";
-                throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+                AddError(CompilerExceptionSource::Declaration, message, yylineno, -1);
             }
             entry = entry->next;
         }
@@ -469,7 +497,7 @@ void Compiler::AddLabel(const char* name, int32_t ip)
                 std::string message = "Label \"";
                 message += name;
                 message += "\" is already declared in this scope";
-                throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+                AddError(CompilerExceptionSource::Declaration, message, yylineno, -1);
             }
             entry = entry->next;
         }
@@ -499,7 +527,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
                 std::string message = "Function \"";
                 message += name;
                 message += "\" is already defined";
-                throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+                AddError(CompilerExceptionSource::Declaration, message, yylineno, -1);
             }
 
             current = current->next;
@@ -514,10 +542,10 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
     if (strcmp(name, EntryPointName) == 0) {
         // Entry point found
         if (parameter_count != 0) {
-            throw CompilerException(CompilerExceptionSource::Declaration, "Entry point must have zero parameters", yylineno, -1);
+            AddError(CompilerExceptionSource::Declaration, "Entry point must have zero parameters", yylineno, -1);
         }
         if (return_type != ReturnSymbolType::Uint8) {
-            throw CompilerException(CompilerExceptionSource::Declaration, "Entry point must return \"uint8\" value", yylineno, -1);
+            AddError(CompilerExceptionSource::Declaration, "Entry point must return \"uint8\" value", yylineno, -1);
         }
 
         // Collect all variables used in the function
@@ -570,7 +598,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
             std::string message = "Parameter count does not match for function \"";
             message += name;
             message += "\"";
-            throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+            AddError(CompilerExceptionSource::Declaration, message, yylineno, -1);
         }
 
         // Promote the prototype to complete function
@@ -594,7 +622,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
                 message += "\" type does not match for function \"";
                 message += name;
                 message += "\"";
-                throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+                AddError(CompilerExceptionSource::Declaration, message, yylineno, -1);
             }
 
             int32_t size = current->offset_or_size;
@@ -638,7 +666,7 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
         std::string message = "Parameter count does not match for function \"";
         message += name;
         message += "\"";
-        throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+        AddError(CompilerExceptionSource::Declaration, message, yylineno, -1);
     }
 
     // Collect all function parameters and used variables
@@ -672,10 +700,10 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
 void Compiler::AddFunctionPrototype(char* name, ReturnSymbolType return_type)
 {
     if (strcmp(name, EntryPointName) == 0) {
-        throw CompilerException(CompilerExceptionSource::Declaration, "Prototype for entry point is not allowed", yylineno, -1);
+        AddError(CompilerExceptionSource::Declaration, "Prototype for entry point is not allowed", yylineno, -1);
     }
     if (!declaration_queue && parameter_count != 0) {
-        throw CompilerException(CompilerExceptionSource::Declaration, "Parameter count does not match", yylineno, -1);
+        AddError(CompilerExceptionSource::Declaration, "Parameter count does not match", yylineno, -1);
     }
 
     // Check if the function with the same name is already declared
@@ -691,7 +719,7 @@ void Compiler::AddFunctionPrototype(char* name, ReturnSymbolType return_type)
                 std::string message = "Duplicate function definition for \"";
                 message += current->name;
                 message += "\"";
-                throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+                AddError(CompilerExceptionSource::Declaration, message, yylineno, -1);
             }
 
             current = current->next;
@@ -738,7 +766,7 @@ void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameter
         std::string message = "Cannot call function \"";
         message += name;
         message += "\", because it was not declared";
-        throw CompilerException(CompilerExceptionSource::Statement, message, yylineno, -1);
+        AddError(CompilerExceptionSource::Statement, message, yylineno, -1);
     }
 
     if (current->type == SymbolType::SharedFunction) {
@@ -765,7 +793,7 @@ void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameter
                 std::string message = "Cannot call function \"";
                 message += name;
                 message += "\" because of parameter count mismatch";
-                throw CompilerException(CompilerExceptionSource::Statement, message, yylineno, -1);
+                AddError(CompilerExceptionSource::Statement, message, yylineno, -1);
             }
 
             return;
@@ -778,7 +806,7 @@ void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameter
             message += "\" because of parameter \"";
             message += current->name;
             message += "\" type mismatch";
-            throw CompilerException(CompilerExceptionSource::Statement, message, yylineno, -1);
+            AddError(CompilerExceptionSource::Statement, message, yylineno, -1);
         }
 
         // Add required parameter to stream
@@ -944,7 +972,7 @@ SymbolTableEntry* Compiler::GetUnusedVariable(SymbolType type)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(this);
     }
 
     SymbolTableEntry* decl = ToDeclarationList(type, 0, buffer, ExpressionType::Variable);
@@ -958,7 +986,7 @@ SymbolTableEntry* Compiler::AddSymbol(const char* name, SymbolType type, int32_t
     ExpressionType exp_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent, bool is_temp)
 {
     if (!name || strlen(name) == 0) {
-        throw CompilerException(CompilerExceptionSource::Declaration, "Symbol name must not be empty", yylineno, -1);
+        AddError(CompilerExceptionSource::Declaration, "Symbol name must not be empty", yylineno, -1);
     }
 
     SymbolTableEntry* symbol = new SymbolTableEntry();
@@ -1042,7 +1070,7 @@ int32_t Compiler::GetSymbolTypeSize(SymbolType type)
 
         case SymbolType::String: return 2; // 16-bit pointer
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(this);
     }
 }
 
@@ -1056,7 +1084,7 @@ int32_t Compiler::GetReturnSymbolTypeSize(ReturnSymbolType type)
 
         case ReturnSymbolType::String: return 2; // 16-bit pointer
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(this);
     }
 }
 
@@ -1075,7 +1103,7 @@ void Compiler::IncreaseScope(ScopeType type)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(this);
     }
 }
 
@@ -1098,7 +1126,7 @@ void Compiler::BackpatchScope(ScopeType type, int32_t new_ip)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(this);
     }
 }
 
@@ -1133,7 +1161,7 @@ bool Compiler::AddToScopeList(ScopeType type, BackpatchList* backpatch)
             break;
         }
 
-        default: ThrowOnUnreachableCode();
+        default: ThrowOnUnreachableCode(this);
     }
 
     return true;

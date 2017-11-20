@@ -18,9 +18,6 @@
     <ClInclude Include="targetver.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
-    <ClInclude Include="parser.tab.h">
-      <Filter>Hlavičkové soubory</Filter>
-    </ClInclude>
     <ClInclude Include="Compiler.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
@@ -48,14 +45,11 @@
     <ClInclude Include="TinyFormat.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
+    <ClInclude Include="parser.tab.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="parser.tab.cpp">
-      <Filter>Zdrojové soubory</Filter>
-    </ClCompile>
-    <ClCompile Include="lexer.flex.cpp">
-      <Filter>Zdrojové soubory</Filter>
-    </ClCompile>
     <ClCompile Include="Compiler.cpp">
       <Filter>Zdrojové soubory</Filter>
     </ClCompile>
@@ -63,6 +57,12 @@
       <Filter>Zdrojové soubory</Filter>
     </ClCompile>
     <ClCompile Include="Log.cpp">
+      <Filter>Zdrojové soubory</Filter>
+    </ClCompile>
+    <ClCompile Include="parser.tab.cpp">
+      <Filter>Zdrojové soubory</Filter>
+    </ClCompile>
+    <ClCompile Include="lexer.flex.cpp">
       <Filter>Zdrojové soubory</Filter>
     </ClCompile>
   </ItemGroup>
