@@ -1280,4 +1280,14 @@ void Compiler::DeclareSharedFunctions()
     // string GetCommandLine();
     AddSymbol("GetCommandLine", SymbolType::SharedFunction, 0, ReturnSymbolType::String,
         ExpressionType::None, 0, 0, 0, nullptr, false);
+
+    // bool StringsEqual(string a, string b);
+    AddSymbol("StringsEqual", SymbolType::SharedFunction, 0, ReturnSymbolType::Bool,
+        ExpressionType::None, 0, 0, 2, nullptr, false);
+
+    AddSymbol("a", SymbolType::String, 0, ReturnSymbolType::Unknown,
+        ExpressionType::None, 0, 0, 1, "StringsEqual", false);
+
+    AddSymbol("b", SymbolType::String, 0, ReturnSymbolType::Unknown,
+        ExpressionType::None, 0, 0, 2, "StringsEqual", false);
 }

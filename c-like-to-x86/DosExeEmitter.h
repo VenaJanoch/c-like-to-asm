@@ -65,6 +65,15 @@ enum struct CpuRegister {
     DI = 7
 };
 
+enum struct CpuSegment {
+    ES = 0,
+    CS = 1,
+    SS = 2,
+    DS = 3,
+    FS = 4,
+    GS = 5
+};
+
 struct DosVariableDescriptor {
     SymbolTableEntry* symbol;
 
@@ -210,6 +219,8 @@ private:
     /// <returns>Target register</returns>
     CpuRegister LoadVariableUnreferenced(DosVariableDescriptor* var, int32_t desired_size);
 
+    CpuRegister LoadVariableIndex(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size);
+
     /// <summary>
     /// Force copy value of variable to specified register,
     /// it does not change ownership of any register
@@ -268,6 +279,7 @@ private:
     void EmitIf(InstructionEntry* i);
     inline void EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr);
     inline void EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr);
+    inline void EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr);
 
     void EmitPush(InstructionEntry* i, std::stack<InstructionEntry*>& call_parameters);
     void EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table, std::stack<InstructionEntry*>& call_parameters);

@@ -746,16 +746,22 @@ assignment
                     message, @1.first_line, @1.first_column);
             }
 
-            sprintf_s(output_buffer, "%s = %s", $1, $3.value);
+			if ($3.index.value) {
+				sprintf_s(output_buffer, "%s = %s[%s]", $1, $3.value, $3.index.value);
+			} else {
+				sprintf_s(output_buffer, "%s = %s", $1, $3.value);
+			}
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::None;
             i->assignment.dst_value = decl->name;
             CopyOperand(i->assignment.op1, $3);
 
+			$$.true_list = $3.true_list;
+
+			$$.value = $1;
             $$.type = decl->type;
-            $$.true_list = $3.true_list;
             $$.exp_type = ExpressionType::Variable;
-            $$.value = $1;
+			$$.index.value = nullptr;
         }
 	| id '[' expression ']' '=' assignment
         {
@@ -795,8 +801,26 @@ assignment
             }
 
 			CheckIsInt($3, "Only integer types are allowed as array index", @3);
+			
+			// Create a variable if needed
+            if ($3.exp_type == ExpressionType::Variable && $3.index.value) {
+                SymbolTableEntry* decl_index = c.GetUnusedVariable($3.type);
 
-            sprintf_s(output_buffer, "%s[%s] = %s", $1, $3.value, $6.value);
+                sprintf_s(output_buffer, "%s = %s[%s]", decl_index->name, $3.value, $3.index.value);
+                InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+                i->assignment.dst_value = decl->name;
+                CopyOperand(i->assignment.op1, $3);
+
+                $3.value = decl_index->name;
+                $3.type = decl_index->type;
+                $3.exp_type = ExpressionType::Variable;
+            }
+
+			if ($6.index.value) {
+				sprintf_s(output_buffer, "%s[%s] = %s[%s]", $1, $3.value, $6.value, $6.index.value);
+			} else {
+				sprintf_s(output_buffer, "%s[%s] = %s", $1, $3.value, $6.value);
+			}
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::None;
             i->assignment.dst_value = decl->name;
@@ -806,6 +830,7 @@ assignment
 			CopyOperand(i->assignment.op1, $6);
 
             $$.true_list = $6.true_list;
+
 			$$.value = $1;
 			$$.type = decl->type;
             $$.exp_type = ExpressionType::Variable;
@@ -851,10 +876,12 @@ assignment_with_declaration
             i->assignment.dst_value = decl->name;
             CopyOperand(i->assignment.op1, $5);
 
+			$$.true_list = $5.true_list;
+
+			$$.value = $3;
             $$.type = $2;
-            $$.true_list = $5.true_list;
             $$.exp_type = ExpressionType::Constant;
-            $$.value = $3;
+			$$.index.value = nullptr;
         }
     | declaration_type id '=' expression
         {
@@ -870,16 +897,22 @@ assignment_with_declaration
 
             SymbolTableEntry* decl = c.ToDeclarationList($1, 0, $2, ExpressionType::None);
 
-            sprintf_s(output_buffer, "%s = %s", $2, $4.value);
+			if ($4.index.value) {
+				sprintf_s(output_buffer, "%s = %s[%s]", $2, $4.value, $4.index.value);
+			} else {
+				sprintf_s(output_buffer, "%s = %s", $2, $4.value);
+			}
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::None;
             i->assignment.dst_value = decl->name;
             CopyOperand(i->assignment.op1, $4);
+			
+			$$.true_list = $4.true_list;
 
+			$$.value = $2;
             $$.type = $1;
-            $$.true_list = $4.true_list;
             $$.exp_type = ExpressionType::Variable;
-            $$.value = $2;
+			$$.index.value = nullptr;
         }
     ;
 
@@ -890,9 +923,8 @@ expression
 
             CheckIsInt($2, "Specified type is not allowed in arithmetic operations", @1);
 
-            SymbolTableEntry* decl;
-
             // Create a variable if needed
+			SymbolTableEntry* decl;
             if ($2.exp_type != ExpressionType::Variable) {
                 decl = c.GetUnusedVariable($2.type);
 
@@ -935,9 +967,8 @@ expression
 
             CheckIsInt($2, "Specified type is not allowed in arithmetic operations", @1);
 
-            SymbolTableEntry* decl;
-
             // Create a variable if needed
+			SymbolTableEntry* decl;
             if ($2.exp_type != ExpressionType::Variable) {
                 decl = c.GetUnusedVariable($2.type);
 
@@ -992,10 +1023,13 @@ expression
                 $4.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
             }
 
+			// ToDo: Fix assigning to variable
+
             $$.true_list = MergeLists($1.true_list, $4.true_list);
             c.BackpatchStream($1.false_list, $3.ip);
             $$.false_list = $4.false_list;
             $$.type = SymbolType::Bool;
+			$$.index.value = nullptr;
         }
     | expression LOG_AND marker expression
         {
@@ -1015,17 +1049,22 @@ expression
                 $4.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
             }
 
+			// ToDo: Fix assigning to variable
+
             $$.false_list = MergeLists($1.false_list, $4.false_list);
             c.BackpatchStream($1.true_list, $3.ip);
             $$.true_list = $4.true_list;
             $$.type = SymbolType::Bool;
+			$$.index.value = nullptr;
         }
     | expression NOT_EQUAL expression
         {
             LogDebug("P: Processing logical not equal");
 
-            CheckIsIntOrBool($1, "Only integer and bool types are allowed in comparsions", @1);
-            CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
+            if ($1.type != SymbolType::String || $3.type != SymbolType::String) {
+			    CheckIsIntOrBool($1, "Only integer and bool types are allowed in comparsions", @1);
+				CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
+			}
 
             sprintf_s(output_buffer, "if (%s != %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::NotEqual, $1, $3);
@@ -1033,16 +1072,20 @@ expression
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-            $$.value = "TrueFalse Only!";
+            // ToDo: Fix assigning to variable
+
             $$.type = SymbolType::Bool;
             $$.exp_type = ExpressionType::None;
+			$$.index.value = nullptr;
         }
     | expression EQUAL expression
         {
             LogDebug("P: Processing logical equal");
 
-            CheckIsIntOrBool($1, "Only integer and bool types are allowed in comparsions", @1);
-            CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
+			if ($1.type != SymbolType::String || $3.type != SymbolType::String) {
+			    CheckIsIntOrBool($1, "Only integer and bool types are allowed in comparsions", @1);
+				CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
+			}
 
             sprintf_s(output_buffer, "if (%s == %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::Equal, $1, $3);
@@ -1058,9 +1101,12 @@ expression
                 $$.true_list = MergeLists($$.true_list, $3.true_list);
                 $$.false_list = MergeLists($$.false_list, $3.false_list);
             }
-            $$.value = "TrueFalse Only!";
+            
+			// ToDo: Fix assigning to variable
+
             $$.type = SymbolType::Bool;
             $$.exp_type = ExpressionType::None;
+			$$.index.value = nullptr;
         }
     | expression GREATER_OR_EQUAL expression
         {
@@ -1075,9 +1121,11 @@ expression
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-            $$.value = "TrueFalse Only!";
+            // ToDo: Fix assigning to variable
+
             $$.type = SymbolType::Bool;
             $$.exp_type = ExpressionType::None;
+			$$.index.value = nullptr;
         }
     | expression LESS_OR_EQUAL expression
         {
@@ -1092,10 +1140,11 @@ expression
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-            $$.value = "TrueFalse Only!";
+            // ToDo: Fix assigning to variable
+
             $$.type = SymbolType::Bool;
             $$.exp_type = ExpressionType::None;
-            printf("P: Done processing logical smaller or equal.\n");
+            $$.index.value = nullptr;
         }
     | expression '>' expression
         {
@@ -1110,9 +1159,11 @@ expression
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-            $$.value = "TrueFalse Only!";
+            // ToDo: Fix assigning to variable
+
             $$.type = SymbolType::Bool;
             $$.exp_type = ExpressionType::None;
+			$$.index.value = nullptr;
         }
     | expression '<' expression
         {
@@ -1127,9 +1178,11 @@ expression
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-            $$.value = "TrueFalse Only!";
+            // ToDo: Fix assigning to variable
+
             $$.type = SymbolType::Bool;
             $$.exp_type = ExpressionType::None;
+			$$.index.value = nullptr;
         }
     | expression SHIFT_LEFT expression
         {
@@ -1147,6 +1200,7 @@ expression
             $$.value = decl->name;
             $$.type = $1.type;
             $$.exp_type = ExpressionType::Variable;
+			$$.index.value = nullptr;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -1166,6 +1220,7 @@ expression
             $$.value = decl->name;
             $$.type = $1.type;
             $$.exp_type = ExpressionType::Variable;
+			$$.index.value = nullptr;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -1183,6 +1238,7 @@ expression
                 $$.value = decl->name;
                 $$.type = SymbolType::String;
                 $$.exp_type = ExpressionType::Variable;
+				$$.index.value = nullptr;
                 $$.true_list = nullptr;
                 $$.false_list = nullptr;
             } else {
@@ -1203,6 +1259,7 @@ expression
                 $$.value = decl->name;
                 $$.type = type;
                 $$.exp_type = ExpressionType::Variable;
+				$$.index.value = nullptr;
                 $$.true_list = nullptr;
                 $$.false_list = nullptr;
             }
@@ -1226,6 +1283,7 @@ expression
             $$.value = decl->name;
             $$.type = type;
             $$.exp_type = ExpressionType::Variable;
+			$$.index.value = nullptr;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -1248,6 +1306,7 @@ expression
             $$.value = decl->name;
             $$.type = type;
             $$.exp_type = ExpressionType::Variable;
+			$$.index.value = nullptr;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -1270,6 +1329,7 @@ expression
             $$.value = decl->name;
             $$.type = type;
             $$.exp_type = ExpressionType::Variable;
+			$$.index.value = nullptr;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -1292,6 +1352,7 @@ expression
             $$.value = decl->name;
             $$.type = type;
             $$.exp_type = ExpressionType::Variable;
+			$$.index.value = nullptr;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -1336,6 +1397,7 @@ expression
             $$ = $2;
             $$.value = decl->name;
             $$.exp_type = ExpressionType::Variable;
+			$$.index.value = nullptr;
        }
     | CONSTANT
         {
@@ -1344,6 +1406,7 @@ expression
             $$.value = _strdup($1.value);
             $$.type = $1.type;
             $$.exp_type = ExpressionType::Constant;
+			$$.index.value = nullptr;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
         }
@@ -1371,6 +1434,7 @@ expression
                 $$.type = SymbolType::None;
                 $$.value = nullptr;
                 $$.exp_type = ExpressionType::None;
+				$$.index.value = nullptr;
                 c.PrepareForCall($1, $3.list, $3.count);
 
                 sprintf_s(output_buffer, "call %s (%d)", $1, $3.count);
@@ -1392,6 +1456,7 @@ expression
 
                 $$.value = decl->name;
                 $$.exp_type = ExpressionType::Variable;
+				$$.index.value = nullptr;
                 c.PrepareForCall($1, $3.list, $3.count);
 
                 sprintf_s(output_buffer, "%s = call %s (%d)", decl->name, $1, $3.count);
@@ -1418,6 +1483,7 @@ expression
                 $$.type = SymbolType::None;
                 $$.value = nullptr;
                 $$.exp_type = ExpressionType::None;
+				$$.index.value = nullptr;
                 c.PrepareForCall($1, nullptr, 0);
 
                 sprintf_s(output_buffer, "call %s (%d)", $1, 0);
@@ -1439,6 +1505,7 @@ expression
 
                 $$.value = decl->name;
                 $$.exp_type = ExpressionType::Variable;
+				$$.index.value = nullptr;
                 c.PrepareForCall($1, nullptr, 0);
 
                 sprintf_s(output_buffer, "%s = call %s (%d)", decl->name, $1, 0);
@@ -1493,6 +1560,7 @@ expression
             $$.value = $1;
             $$.type = param->type;
             $$.exp_type = ExpressionType::Variable;
+			$$.index.value = nullptr;
         }
     ;
 
