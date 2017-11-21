@@ -286,3 +286,6 @@ __pycache__/
 *.btm.cs
 *.odx.cs
 *.xsd.cs
+c-like-to-x86/lexer.flex.cpp
+c-like-to-x86/parser.tab.cpp
+c-like-to-x86/parser.tab.h
