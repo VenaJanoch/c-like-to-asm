@@ -209,8 +209,8 @@ private:
     /// Push value of variable to parameter stack 
     /// </summary>
     /// <param name="var">Variable to push</param>
-    /// <param name="param_type">Type of parameter</param>
-    void PushVariableToStack(DosVariableDescriptor* var, SymbolType param_type);
+    /// <param name="param_size">Size of parameter</param>
+    void PushVariableToStack(DosVariableDescriptor* var, int32_t param_size);
 
     /// <summary>
     /// Force load value of variable to any register,
@@ -268,7 +268,7 @@ private:
     void EmitFunctionPrologue(SymbolTableEntry* function, SymbolTableEntry* symbol_table);
 
     void EmitAssign(InstructionEntry* i);
-    inline void EmitAssignSimple(InstructionEntry* i);
+    inline void EmitAssignNone(InstructionEntry* i);
     inline void EmitAssignNegation(InstructionEntry* i);
     inline void EmitAssignAddSubtract(InstructionEntry* i);
     inline void EmitAssignMultiply(InstructionEntry* i);

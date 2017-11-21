@@ -18,6 +18,8 @@
 /// </summary>
 #define EntryPointName "Main"
 
+#define IsPointer (-1)
+
 // Defines to shorten the code
 #define TypeIsValid(type)                                                       \
     (type == SymbolType::Uint8  || type == SymbolType::Uint16 ||                \
@@ -67,7 +69,8 @@
 #define CheckIsConstant(exp, loc)                                           \
     if (exp.exp_type != ExpressionType::Constant) {                         \
         throw CompilerException(CompilerExceptionSource::Statement,         \
-            "Specified expression must have constant value", loc.first_line, loc.first_column); \
+            "Specified expression must have constant value",                \
+            loc.first_line, loc.first_column);                              \
     } 
 
 #define CopyOperand(to, from)                       \
@@ -174,7 +177,7 @@ public:
 
     SymbolTableEntry* GetUnusedVariable(SymbolType type);
 
-    int32_t GetSymbolTypeSize(SymbolType type);
+    int32_t GetSymbolTypeSize(SymbolType type, bool is_pointer);
     int32_t GetReturnSymbolTypeSize(ReturnSymbolType type);
 
     void IncreaseScope(ScopeType type);

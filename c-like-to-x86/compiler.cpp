@@ -388,7 +388,7 @@ SymbolTableEntry* Compiler::ToDeclarationList(SymbolType type, int32_t size, con
     symbol->type = type;
     symbol->size = size;
     symbol->exp_type = exp_type;
-    symbol->offset_or_size = GetSymbolTypeSize(type);
+    symbol->offset_or_size = GetSymbolTypeSize(type, size == IsPointer);
 
     if (declaration_queue) {
         SymbolTableEntry* entry = declaration_queue;
@@ -416,7 +416,7 @@ void Compiler::ToParameterList(SymbolType type, const char* name)
     SymbolTableEntry* symbol = new SymbolTableEntry();
     symbol->name = _strdup(name);
     symbol->type = type;
-    symbol->offset_or_size = GetSymbolTypeSize(type);
+    symbol->offset_or_size = GetSymbolTypeSize(type, false);
     symbol->parameter = parameter_count;
 
     if (declaration_queue) {
@@ -482,7 +482,7 @@ void Compiler::AddLabel(const char* name, int32_t ip)
 void Compiler::AddStaticVariable(SymbolType type, int32_t size, const char* name)
 {
     SymbolTableEntry* entry = AddSymbol(name, type, size, ReturnSymbolType::Unknown,
-        ExpressionType::Variable, 0, GetSymbolTypeSize(type), 0, nullptr, false);
+        ExpressionType::Variable, 0, GetSymbolTypeSize(type, size == IsPointer), 0, nullptr, false);
 }
 
 void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
@@ -536,20 +536,6 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
 
         SymbolTableEntry* entry = AddSymbol(name, SymbolType::EntryPoint, 0, return_type,
             ExpressionType::None, ip, offset_internal, 0, nullptr, false);
-
-        /*
-        // Move entry point to the beginning of the list
-        if (symbol_table != entry) {
-            SymbolTableEntry* entry_before = symbol_table;
-            while (entry_before->next != entry) {
-                entry_before = entry_before->next;
-            }
-
-            entry_before->next = entry->next;
-            entry->next = symbol_table;
-            symbol_table = entry;
-        }
-        */
 
         ReleaseDeclarationQueue();
         return;
@@ -628,43 +614,40 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
 
         // Size of all parameters and variables
         prototype->offset_or_size = offset_internal;
-
-        ReleaseDeclarationQueue();
-        return;
-    }
-
-    // Prototype was not defined yet
-    if (!declaration_queue && parameter_count != 0) {
-        std::string message = "Parameter count does not match for function \"";
-        message += name;
-        message += "\"";
-        throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
-    }
-
-    // Collect all function parameters and used variables
-    uint16_t parameter_current = 0;
-    SymbolTableEntry* current = declaration_queue;
-    while (current) {
-        int32_t size = current->offset_or_size;
-
-        if (parameter_current < parameter_count) {
-            parameter_current++;
-            current->parameter = parameter_current;
-        } else {
-            current->parameter = 0;
+    } else {
+        // Prototype was not defined yet
+        if (!declaration_queue && parameter_count != 0) {
+            std::string message = "Parameter count does not match for function \"";
+            message += name;
+            message += "\"";
+            throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
         }
 
-        AddSymbol(current->name, current->type, current->size, current->return_type,
-            current->exp_type, current->ip, offset_internal, current->parameter, name, current->is_temp);
+        // Collect all function parameters and used variables
+        uint16_t parameter_current = 0;
+        SymbolTableEntry* current = declaration_queue;
+        while (current) {
+            int32_t size = current->offset_or_size;
 
-        offset_internal += size;
-        offset_global += size;
+            if (parameter_current < parameter_count) {
+                parameter_current++;
+                current->parameter = parameter_current;
+            } else {
+                current->parameter = 0;
+            }
 
-        current = current->next;
+            AddSymbol(current->name, current->type, current->size, current->return_type,
+                current->exp_type, current->ip, offset_internal, current->parameter, name, current->is_temp);
+
+            offset_internal += size;
+            offset_global += size;
+
+            current = current->next;
+        }
+
+        AddSymbol(name, SymbolType::Function, 0, return_type,
+            ExpressionType::None, ip, offset_internal, parameter_count, nullptr, false);
     }
-
-    AddSymbol(name, SymbolType::Function, 0, return_type,
-        ExpressionType::None, ip, offset_internal, parameter_count, nullptr, false);
 
     ReleaseDeclarationQueue();
 }
@@ -789,10 +772,7 @@ void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameter
 
         current = current->next;
 
-        // Remove processed entry from the list
-        //SymbolTableEntry* temp = call_parameters;
         call_parameters = call_parameters->next;
-        //delete temp;
 
         parameters_found++;
     } while (parameters_found < parameter_count);
@@ -1032,8 +1012,12 @@ const char* Compiler::ExpressionTypeToString(ExpressionType type)
     }
 }
 
-int32_t Compiler::GetSymbolTypeSize(SymbolType type)
+int32_t Compiler::GetSymbolTypeSize(SymbolType type, bool is_pointer)
 {
+    if (is_pointer) {
+        return 2; // 16-bit pointer
+    }
+
     switch (type) {
         case SymbolType::Bool: return 1;
         case SymbolType::Uint8: return 1;

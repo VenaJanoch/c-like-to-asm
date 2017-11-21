@@ -635,7 +635,7 @@ void DosExeEmitter::EmitStaticData()
 
         while (it != variables.end()) {
             if (!it->symbol->parent) {
-                uint32_t var_size = compiler->GetSymbolTypeSize(it->symbol->type);
+                uint32_t var_size = compiler->GetSymbolTypeSize(it->symbol->type, it->symbol->size == IsPointer);
                 if (it->symbol->size > 0) {
                     var_size *= it->symbol->size;
                 }
@@ -949,11 +949,15 @@ void DosExeEmitter::RefreshParentEndIp(SymbolTableEntry* symbol_table)
 
 void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, bool force)
 {
+    if (var->symbol->size > 0) {
+        ThrowOnUnreachableCode();
+    }
+
     if (!var->is_dirty) {
         return;
     }
 
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, var->symbol->size == IsPointer);
 
     if (var->symbol->parent) {
         if (!force && !FindNextVariableReference(var)) {
@@ -1044,7 +1048,11 @@ void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, bool force)
 
 void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, CpuRegister reg_dst)
 {
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
+    if (var->symbol->size == 0) {
+        ThrowOnUnreachableCode();
+    }
+
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, false);
 
     switch (index.exp_type) {
         case ExpressionType::Constant: {
@@ -1200,10 +1208,9 @@ void DosExeEmitter::MarkRegisterAsDiscarded(CpuRegister reg)
     }
 }
 
-void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, SymbolType param_type)
+void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, int32_t param_size)
 {
-    int32_t param_size = compiler->GetSymbolTypeSize(param_type);
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, var->symbol->size == IsPointer);
 
     if (var_size < param_size) {
         // Variable expansion is needed
@@ -1362,7 +1369,11 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, SymbolType p
 
 CpuRegister DosExeEmitter::LoadVariableUnreferenced(DosVariableDescriptor* var, int32_t desired_size)
 {
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
+    if (var->symbol->size > 0) {
+        ThrowOnUnreachableCode();
+    }
+
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, var->symbol->size == IsPointer);
 
     CpuRegister reg_dst;
     if (var->reg == CpuRegister::None) {
@@ -1387,7 +1398,11 @@ CpuRegister DosExeEmitter::LoadVariableUnreferenced(DosVariableDescriptor* var, 
 
 CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size)
 {
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
+    if (var->symbol->size == 0) {
+        ThrowOnUnreachableCode();
+    }
+
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, false);
 
     switch (index.exp_type) {
         case ExpressionType::Constant: {
@@ -1583,7 +1598,11 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
 
 void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegister reg_dst, int32_t desired_size)
 {
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
+    if (var->symbol->size > 0) {
+        ThrowOnUnreachableCode();
+    }
+
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, var->symbol->size == IsPointer);
 
     if (var->reg != CpuRegister::None && (var_size >= desired_size || var->reg != reg_dst)) {
         // Variable is already in desired register with desired size
@@ -2107,7 +2126,7 @@ void DosExeEmitter::EmitEntryPointPrologue(SymbolTableEntry* function)
         if (it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0) {
             if (!it->symbol->parameter /*&& !it->symbol->is_temp*/) {
                 // Local variable
-                int32_t size = compiler->GetSymbolTypeSize(it->symbol->type);
+                int32_t size = compiler->GetSymbolTypeSize(it->symbol->type, it->symbol->size == IsPointer);
                 if (it->symbol->size > 0) {
                     size *= it->symbol->size;
                 }
@@ -2163,7 +2182,7 @@ void DosExeEmitter::EmitFunctionPrologue(SymbolTableEntry* function, SymbolTable
         if (it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0) {
             if (it->symbol->parameter) {
                 // Parameter
-                int32_t size = compiler->GetSymbolTypeSize(it->symbol->type);
+                int32_t size = compiler->GetSymbolTypeSize(it->symbol->type, it->symbol->size == IsPointer);
                 if (size < 2) { // Min. push size is 2 bytes
                     size = 2;
                 }
@@ -2174,7 +2193,7 @@ void DosExeEmitter::EmitFunctionPrologue(SymbolTableEntry* function, SymbolTable
                 stack_param_size += size;
             } else /*if (!it->symbol->is_temp)*/ {
                 // Local variable
-                int32_t size = compiler->GetSymbolTypeSize(it->symbol->type);
+                int32_t size = compiler->GetSymbolTypeSize(it->symbol->type, it->symbol->size == IsPointer);
                 if (it->symbol->size > 0) {
                     size *= it->symbol->size;
                 }
@@ -2190,7 +2209,7 @@ void DosExeEmitter::EmitFunctionPrologue(SymbolTableEntry* function, SymbolTable
 
     if (stack_var_size > 0) {
         a = AllocateBufferForInstruction(2 + 2);
-        a[0] = 0x66;    // Operand size prefix
+        //a[0] = 0x66;    // Operand size prefix
         a[0] = 0x81;    // sub rm32 (esp), imm32 <size>
         a[1] = ToXrm(3, 5, CpuRegister::SP);
         *(uint16_t*)(a + 2) = stack_var_size;
@@ -2204,7 +2223,7 @@ void DosExeEmitter::EmitAssign(InstructionEntry* i)
 {
     switch (i->assignment.type) {
         case AssignType::None: {
-            EmitAssignSimple(i);
+            EmitAssignNone(i);
             break;
         }
         case AssignType::Negation: {
@@ -2235,7 +2254,7 @@ void DosExeEmitter::EmitAssign(InstructionEntry* i)
     }
 }
 
-void DosExeEmitter::EmitAssignSimple(InstructionEntry* i)
+void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
 {
     DosVariableDescriptor* dst = FindVariableByName(i->assignment.dst_value);
 
@@ -2264,21 +2283,27 @@ void DosExeEmitter::EmitAssignSimple(InstructionEntry* i)
 
                 int32_t value = atoi(i->assignment.op1.value);
 
-                int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
+                int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
                 LoadConstantToRegister(value, reg_dst, dst_size);
 
                 dst->reg = reg_dst;
             }
 
-            dst->is_dirty = true;
-            dst->last_used = ip_src;
+            if (i->assignment.dst_index.value) {
+                // Array values are not cached
+                SaveIndexedVariable(dst, i->assignment.dst_index, dst->reg);
+                dst->reg = CpuRegister::None;
+            } else {
+                dst->is_dirty = true;
+                dst->last_used = ip_src;
+            }
             break;
         }
         case ExpressionType::Variable: {
             DosVariableDescriptor* op1 = FindVariableByName(i->assignment.op1.value);
 
-            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
-            int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
+            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
+            int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
 
             if (op1->symbol->exp_type == ExpressionType::Constant) {
                 dst->reg = GetUnusedRegister();
@@ -2354,7 +2379,7 @@ void DosExeEmitter::EmitAssignNegation(InstructionEntry* i)
         reg_dst = GetUnusedRegister();
     }
 
-    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
+    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
 
     switch (i->assignment.op1.exp_type) {
         case ExpressionType::Constant: {
@@ -2448,7 +2473,7 @@ void DosExeEmitter::EmitAssignAddSubtract(InstructionEntry* i)
         constant_swapped = true;
     }
 
-    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
+    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
 
     if (i->assignment.op1.exp_type == ExpressionType::Constant) {
         // Both operands are constants
@@ -2619,7 +2644,7 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
 {
     DosVariableDescriptor* dst = FindVariableByName(i->assignment.dst_value);
 
-    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
+    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
 
     if (i->assignment.op1.exp_type == ExpressionType::Constant) {
         // Constant has to be second operand, swap them
@@ -2773,7 +2798,7 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
             dst->is_dirty = true;
             dst->last_used = ip_src;
 
-            int32_t op2_size = compiler->GetSymbolTypeSize(op2->symbol->type);
+            int32_t op2_size = compiler->GetSymbolTypeSize(op2->symbol->type, op2->symbol->size == IsPointer);
             if (op2_size < dst_size) {
                 // Required size is higher than provided, unreference and expand it
                 op2->reg = LoadVariableUnreferenced(op2, dst_size);
@@ -2897,7 +2922,7 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
 {
     DosVariableDescriptor* dst = FindVariableByName(i->assignment.dst_value);
 
-    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
+    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
 
     switch (i->assignment.op1.exp_type) {
         case ExpressionType::Constant: {
@@ -3077,7 +3102,7 @@ void DosExeEmitter::EmitAssignShift(InstructionEntry* i)
 {
     DosVariableDescriptor* dst = FindVariableByName(i->assignment.dst_value);
 
-    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
+    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
 
     switch (i->assignment.op2.exp_type) {
         case ExpressionType::Constant: {
@@ -3085,6 +3110,7 @@ void DosExeEmitter::EmitAssignShift(InstructionEntry* i)
 
             SaveAndUnloadRegister(CpuRegister::CL);
             LoadConstantToRegister(value, CpuRegister::CL, dst_size);
+            // ToDo: Use shl/shr rm8/16/32, imm8
             break;
         }
         case ExpressionType::Variable: {
@@ -3113,7 +3139,7 @@ void DosExeEmitter::EmitAssignShift(InstructionEntry* i)
         }
         case ExpressionType::Variable: {
             DosVariableDescriptor* op1 = FindVariableByName(i->assignment.op1.value);
-            int32_t op1_size = compiler->GetSymbolTypeSize(dst->symbol->type);
+            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
 
             if (dst == op1 && op1->reg != CpuRegister::None && dst_size <= op1_size) {
                 reg_dst = op1->reg;
@@ -3243,30 +3269,28 @@ void DosExeEmitter::EmitIf(InstructionEntry* i)
 
     if (i->if_statement.op1.type == SymbolType::String || i->if_statement.op2.type == SymbolType::String) {
         EmitIfStrings(i, goto_ptr);
-        goto DoBackpatch;
+    } else {
+        switch (i->if_statement.type) {
+            case CompareType::LogOr:
+            case CompareType::LogAnd: {
+                EmitIfOrAnd(i, goto_ptr);
+                break;
+            }
+
+            case CompareType::Equal:
+            case CompareType::NotEqual:
+            case CompareType::Greater:
+            case CompareType::Less:
+            case CompareType::GreaterOrEqual:
+            case CompareType::LessOrEqual: {
+                EmitIfArithmetic(i, goto_ptr);
+                break;
+            }
+
+            default: ThrowOnUnreachableCode();
+        }
     }
 
-    switch (i->if_statement.type) {
-        case CompareType::LogOr:
-        case CompareType::LogAnd: {
-            EmitIfOrAnd(i, goto_ptr);
-            break;
-        }
-
-        case CompareType::Equal:
-        case CompareType::NotEqual:
-        case CompareType::Greater:
-        case CompareType::Less:
-        case CompareType::GreaterOrEqual:
-        case CompareType::LessOrEqual: {
-            EmitIfArithmetic(i, goto_ptr);
-            break;
-        }
-
-        default: ThrowOnUnreachableCode();
-    }
-
-DoBackpatch:
     if (!goto_ptr) {
         return;
     }
@@ -3295,7 +3319,7 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
         case ExpressionType::Constant: {
             DosVariableDescriptor* op1 = FindVariableByName(i->if_statement.op1.value);
 
-            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
+            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
 
             int32_t value = atoi(i->if_statement.op2.value);
 
@@ -3343,7 +3367,7 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
                 std::swap(op1, op2);
             }
 
-            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
+            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
 
             CpuRegister reg_dst = LoadVariableUnreferenced(op1, op1_size);
 
@@ -3465,7 +3489,7 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
     switch (i->if_statement.op2.exp_type) {
         case ExpressionType::Constant: {
             DosVariableDescriptor* op1 = FindVariableByName(i->if_statement.op1.value);
-            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
+            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
 
             int32_t value = atoi(i->if_statement.op2.value);
 
@@ -3513,7 +3537,7 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
                 i->if_statement.type = GetSwappedCompareType(i->if_statement.type);
             }
 
-            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
+            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
 
             CpuRegister reg_dst = LoadVariableUnreferenced(op1, op1_size);
 
@@ -3674,11 +3698,11 @@ void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr)
         });
     } else {
         DosVariableDescriptor* op2 = FindVariableByName(i->if_statement.op2.value);
-        PushVariableToStack(op2, SymbolType::String);
+        PushVariableToStack(op2, compiler->GetSymbolTypeSize(SymbolType::String, false));
     }
 
     DosVariableDescriptor* op1 = FindVariableByName(i->if_statement.op1.value);
-    PushVariableToStack(op1, SymbolType::String);
+    PushVariableToStack(op1, compiler->GetSymbolTypeSize(SymbolType::String, false));
 
     SaveAndUnloadAllRegisters();
 
@@ -3823,7 +3847,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
 
                 case ExpressionType::Variable: {
                     DosVariableDescriptor* var = FindVariableByName(push->push_statement.symbol->name);
-                    PushVariableToStack(var, param_decl->type);
+                    PushVariableToStack(var, compiler->GetSymbolTypeSize(param_decl->type, param_decl->size == IsPointer));
                     break;
                 }
 
@@ -3974,7 +3998,7 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
             SymbolTableEntry* param_decl = symbol_table;
             while (param_decl) {
                 if (param_decl->parameter != 0 && param_decl->parent && strcmp(param_decl->parent, parent->name) == 0) {
-                    stack_param_size += compiler->GetSymbolTypeSize(param_decl->type);
+                    stack_param_size += compiler->GetSymbolTypeSize(param_decl->type, param_decl->size == IsPointer);
                 }
 
                 param_decl = param_decl->next;

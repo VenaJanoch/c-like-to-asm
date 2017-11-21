@@ -411,6 +411,9 @@ matched_statement
 
             int32_t start_ip = c.NextIp();
 
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($4);
+
             while (current) {
                 if (current->is_default) {
                     if (default_statement) {
@@ -657,6 +660,16 @@ declaration
 
             LogDebug("P: Found array variable declaration");
         }
+	| declaration_type '*' id
+        {
+			CheckTypeIsArrayCompatible($1, "Specified type cannot be used as array type", @1);
+
+            $$.type = $1;
+			$$.size = IsPointer;
+            c.ToDeclarationList($1, IsPointer, $3, ExpressionType::Variable);
+
+            LogDebug("P: Found pointer variable declaration");
+        }
     | declaration ',' id
         {
 			$$ = $1;
@@ -699,6 +712,16 @@ static_declaration
             c.AddStaticVariable($2, size, $6);
 
             LogDebug("P: Found static array variable declaration");
+        }
+	| STATIC declaration_type '*' id
+        {
+			CheckTypeIsArrayCompatible($2, "Specified type cannot be used as array type", @2);
+
+            $$.type = $2;
+			$$.size = IsPointer;
+            c.AddStaticVariable($2, IsPointer, $4);
+
+            LogDebug("P: Found static pointer variable declaration");
         }
     | static_declaration ',' id
         {
@@ -1612,6 +1635,9 @@ call_parameter_list
 
             CheckTypeIsValid($1.type, @1);
 
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+
             $$.list = c.ToCallParameterList(nullptr, $1.type, $1.value, $1.exp_type);
             $$.count = 1;
         }
@@ -1620,6 +1646,9 @@ call_parameter_list
             LogDebug("P: Processing call parameter list");
 
             CheckTypeIsValid($3.type, @3);
+
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($3);
 
             $$.list = c.ToCallParameterList($1.list, $3.type, $3.value, $3.exp_type);
             $$.count = $1.count + 1;
