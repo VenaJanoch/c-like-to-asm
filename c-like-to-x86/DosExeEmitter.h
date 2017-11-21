@@ -185,6 +185,8 @@ private:
     /// <param name="force">Force save (don't check references)</param>
     void SaveVariable(DosVariableDescriptor* var, bool force);
 
+    void SaveIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, CpuRegister reg_dst);
+
     /// <summary>
     /// Save variable which uses specified register and unreference it
     /// </summary>
@@ -219,7 +221,7 @@ private:
     /// <returns>Target register</returns>
     CpuRegister LoadVariableUnreferenced(DosVariableDescriptor* var, int32_t desired_size);
 
-    CpuRegister LoadVariableIndex(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size);
+    CpuRegister LoadIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size);
 
     /// <summary>
     /// Force copy value of variable to specified register,
@@ -302,6 +304,8 @@ private:
     bool IfConstexpr(CompareType type, int32_t op1, int32_t op2);
 
     void EmitSharedFunction(char* name, std::function<void()> emitter);
+
+    int8_t SizeToShift(int32_t size);
 
     // Output buffer management
     uint8_t* AllocateBuffer(uint32_t size);

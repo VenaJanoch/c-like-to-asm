@@ -802,19 +802,8 @@ assignment
 
 			CheckIsInt($3, "Only integer types are allowed as array index", @3);
 			
-			// Create a variable if needed
-            if ($3.exp_type == ExpressionType::Variable && $3.index.value) {
-                SymbolTableEntry* decl_index = c.GetUnusedVariable($3.type);
-
-                sprintf_s(output_buffer, "%s = %s[%s]", decl_index->name, $3.value, $3.index.value);
-                InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
-                i->assignment.dst_value = decl->name;
-                CopyOperand(i->assignment.op1, $3);
-
-                $3.value = decl_index->name;
-                $3.type = decl_index->type;
-                $3.exp_type = ExpressionType::Variable;
-            }
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($3);
 
 			if ($6.index.value) {
 				sprintf_s(output_buffer, "%s[%s] = %s[%s]", $1, $3.value, $6.value, $6.index.value);
@@ -1066,6 +1055,10 @@ expression
 				CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
 			}
 
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
+
             sprintf_s(output_buffer, "if (%s != %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::NotEqual, $1, $3);
 
@@ -1086,6 +1079,10 @@ expression
 			    CheckIsIntOrBool($1, "Only integer and bool types are allowed in comparsions", @1);
 				CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
 			}
+
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
 
             sprintf_s(output_buffer, "if (%s == %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::Equal, $1, $3);
@@ -1115,6 +1112,10 @@ expression
             CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
             CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
 
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
+
             sprintf_s(output_buffer, "if (%s >= %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::GreaterOrEqual, $1, $3);
 
@@ -1133,6 +1134,10 @@ expression
 
             CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
             CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
+
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
 
             sprintf_s(output_buffer, "if (%s <= %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::LessOrEqual, $1, $3);
@@ -1153,6 +1158,10 @@ expression
             CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
             CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
 
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
+
             sprintf_s(output_buffer, "if (%s > %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::Greater, $1, $3);
 
@@ -1172,6 +1181,10 @@ expression
             CheckIsInt($1, "Only integer types are allowed in comparsions", @1);
             CheckIsInt($3, "Only integer types are allowed in comparsions", @3);
 
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
+
             sprintf_s(output_buffer, "if (%s < %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::Less, $1, $3);
 
@@ -1190,6 +1203,10 @@ expression
 
             CheckIsInt($1, "Only integer types are allowed in shift operations", @1);
             CheckIsInt($3, "Only integer types are allowed in shift operations", @3);
+
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
 
             SymbolTableEntry* decl = c.GetUnusedVariable($1.type);
 
@@ -1211,6 +1228,10 @@ expression
             CheckIsInt($1, "Only integer types are allowed in shift operations", @1);
             CheckIsInt($3, "Only integer types are allowed in shift operations", @3);
         
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
+
             SymbolTableEntry* decl = c.GetUnusedVariable($1.type);
 
             sprintf_s(output_buffer, "%s = %s >> %s", decl->name, $1.value, $3.value);
@@ -1250,6 +1271,10 @@ expression
                         "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
                 }
 
+				// Move indexed variables to temp. variables
+				PrepareIndexedVariableIfNeeded($1);
+				PrepareIndexedVariableIfNeeded($3);
+
                 SymbolTableEntry* decl = c.GetUnusedVariable(type);
 
                 sprintf_s(output_buffer, "%s = %s + %s", decl->name, $1.value, $3.value);
@@ -1274,6 +1299,10 @@ expression
                     "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
             }
 
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
+
             SymbolTableEntry* decl = c.GetUnusedVariable(type);
 
             sprintf_s(output_buffer, "%s = %s - %s", decl->name, $1.value, $3.value);
@@ -1296,6 +1325,10 @@ expression
                 throw CompilerException(CompilerExceptionSource::Statement,
                     "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
             }
+
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
 
             SymbolTableEntry* decl = c.GetUnusedVariable(type);
 
@@ -1320,6 +1353,10 @@ expression
                     "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
             }
 
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
+
             SymbolTableEntry* decl = c.GetUnusedVariable(type);
 
             sprintf_s(output_buffer, "%s = %s / %s", decl->name, $1.value, $3.value);
@@ -1342,6 +1379,10 @@ expression
                 throw CompilerException(CompilerExceptionSource::Statement,
                     "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
             }
+
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($3);
 
             SymbolTableEntry* decl = c.GetUnusedVariable(type);
 

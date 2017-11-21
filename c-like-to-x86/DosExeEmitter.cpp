@@ -1042,6 +1042,117 @@ void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, bool force)
     var->is_dirty = false;
 }
 
+void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, CpuRegister reg_dst)
+{
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
+
+    switch (index.exp_type) {
+        case ExpressionType::Constant: {
+            int32_t value = atoi(index.value) * var_size;
+            LoadConstantToRegister(value, CpuRegister::DI, 2);
+            break;
+        }
+        case ExpressionType::Variable: {
+            DosVariableDescriptor* index_desc = FindVariableByName(index.value);
+            CopyVariableToRegister(index_desc, CpuRegister::DI, 2);
+
+            // Multiply by size
+            uint8_t shift = SizeToShift(var_size);
+            if (shift > 0) {
+                uint8_t* a = AllocateBufferForInstruction(2 + 1);
+                a[0] = 0xC1;    // shl rm16, imm8
+                a[1] = ToXrm(3, 4, CpuRegister::DI);
+                a[2] = shift;
+            }
+            break;
+        }
+
+        default: ThrowOnUnreachableCode();
+    }
+
+    switch (var_size) {
+        case 1: {
+            if (!var->symbol->parent) {
+                // Static push (16-bit range)
+                uint8_t* a = AllocateBufferForInstruction(2 + 2);
+                a[0] = 0x88;   // mov rm8, r8
+                a[1] = ToXrm(2, reg_dst, 5);
+
+                backpatch.push_back({
+                    DosBackpatchType::ToDsAbs16, DosBackpatchTarget::Static,
+                    (uint32_t)((a + 2) - buffer), 0, 0, var->symbol->name
+                });
+            } else if (var->location == 0) {
+                ThrowOnUnreachableCode();
+            } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
+                // Stack to register copy (16-bit range)
+                ThrowOnTooFarCall();
+            } else {
+                // Stack to register copy (8-bit range)
+                uint8_t* a = AllocateBufferForInstruction(2 + 1);
+                a[0] = 0x88;   // mov rm8, r8
+                a[1] = ToXrm(1, reg_dst, 3);
+                a[2] = (int8_t)var->location;
+            }
+            break;
+        }
+        case 2: {
+            if (!var->symbol->parent) {
+                // Static push (16-bit range)
+                uint8_t* a = AllocateBufferForInstruction(2 + 2);
+                a[0] = 0x89;   // mov rm16, r16
+                a[1] = ToXrm(2, reg_dst, 5);
+
+                backpatch.push_back({
+                    DosBackpatchType::ToDsAbs16, DosBackpatchTarget::Static,
+                    (uint32_t)((a + 2) - buffer), 0, 0, var->symbol->name
+                });
+            } else if (var->location == 0) {
+                ThrowOnUnreachableCode();
+            } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
+                // Stack to register copy (16-bit range)
+                ThrowOnTooFarCall();
+            } else {
+                // Stack to register copy (8-bit range)
+                uint8_t* a = AllocateBufferForInstruction(2 + 1);
+                a[0] = 0x89;   // mov rm16, r16
+                a[1] = ToXrm(1, reg_dst, 3);
+                a[2] = (int8_t)var->location;
+            }
+            break;
+        }
+        case 4: {
+            if (!var->symbol->parent) {
+                // Static push (16-bit range)
+                uint8_t* a = AllocateBufferForInstruction(3 + 2);
+                a[0] = 0x66;   // Operand size prefix
+                a[1] = 0x89;   // mov rm32, r32
+                a[2] = ToXrm(2, reg_dst, 5);
+
+                backpatch.push_back({
+                    DosBackpatchType::ToDsAbs16, DosBackpatchTarget::Static,
+                    (uint32_t)((a + 3) - buffer), 0, 0, var->symbol->name
+                });
+            } else if (var->location == 0) {
+                ThrowOnUnreachableCode();
+            } else if (var->location <= INT8_MIN || var->location >= INT8_MAX) {
+                // Stack to register copy (16-bit range)
+                ThrowOnTooFarCall();
+            } else {
+                // Stack to register copy (8-bit range)
+                uint8_t* a = AllocateBufferForInstruction(3 + 1);
+                a[0] = 0x66;   // Operand size prefix
+                a[1] = 0x89;   // mov rm32, r32
+                a[2] = ToXrm(1, reg_dst, 3);
+                a[3] = (int8_t)var->location;
+            }
+            break;
+        }
+
+        default: ThrowOnUnreachableCode();
+    }
+}
+
 void DosExeEmitter::SaveAndUnloadRegister(CpuRegister reg)
 {
     std::list<DosVariableDescriptor>::iterator it = variables.begin();
@@ -1274,7 +1385,7 @@ CpuRegister DosExeEmitter::LoadVariableUnreferenced(DosVariableDescriptor* var, 
     return reg_dst;
 }
 
-CpuRegister DosExeEmitter::LoadVariableIndex(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size)
+CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size)
 {
     int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
 
@@ -1288,8 +1399,14 @@ CpuRegister DosExeEmitter::LoadVariableIndex(DosVariableDescriptor* var, Instruc
             DosVariableDescriptor* index_desc = FindVariableByName(index.value);
             CopyVariableToRegister(index_desc, CpuRegister::SI, 2);
 
-            // ToDo: Multiply / shift left by size
-
+            // Multiply by size
+            uint8_t shift = SizeToShift(var_size);
+            if (shift > 0) {
+                uint8_t* a = AllocateBufferForInstruction(2 + 1);
+                a[0] = 0xC1;    // shl rm16, imm8
+                a[1] = ToXrm(3, 4, CpuRegister::SI);
+                a[2] = shift;
+            }
             break;
         }
 
@@ -2163,18 +2280,9 @@ void DosExeEmitter::EmitAssignSimple(InstructionEntry* i)
             int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
             int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
 
-            if (op1->reg != CpuRegister::None && op1_size >= dst_size) {
-                // Variable with desired size is already in register,
-                // so only change register ownership
-                dst->reg = LoadVariableUnreferenced(op1, dst_size);
-                dst->is_dirty = true;
-                dst->last_used = ip_src;
-                break;
-            }
-
-            CpuRegister reg_dst = GetUnusedRegister();
-
             if (op1->symbol->exp_type == ExpressionType::Constant) {
+                dst->reg = GetUnusedRegister();
+
                 if (op1->symbol->type == SymbolType::String) {
                     ThrowOnUnreachableCode();
                     /*
@@ -2196,18 +2304,22 @@ void DosExeEmitter::EmitAssignSimple(InstructionEntry* i)
                     */
                 } else {
                     int32_t value = atoi(op1->value);
-                    LoadConstantToRegister(value, reg_dst, dst_size);
+                    LoadConstantToRegister(value, dst->reg, dst_size);
                 }
-
-                dst->reg = reg_dst;
             } else if (i->assignment.op1.index.value) {
-                dst->reg = LoadVariableIndex(op1, i->assignment.op1.index, dst_size);
+                dst->reg = LoadIndexedVariable(op1, i->assignment.op1.index, dst_size);
             } else {
                 dst->reg = LoadVariableUnreferenced(op1, dst_size);
             }
 
-            dst->is_dirty = true;
-            dst->last_used = ip_src;
+            if (i->assignment.dst_index.value) {
+                // Array values are not cached
+                SaveIndexedVariable(dst, i->assignment.dst_index, dst->reg);
+                dst->reg = CpuRegister::None;
+            } else {
+                dst->is_dirty = true;
+                dst->last_used = ip_src;
+            }
             break;
         }
 
@@ -3598,9 +3710,6 @@ void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr)
             b.value = "StringsEqual";
             backpatch.push_back(b);
         }
-
-    AlreadyPatched:
-        ;
     }
 
     // Check result
@@ -3940,6 +4049,18 @@ void DosExeEmitter::EmitSharedFunction(char* name, std::function<void()> emitter
     }
 
     ThrowOnUnreachableCode();
+}
+
+int8_t DosExeEmitter::SizeToShift(int32_t size)
+{
+    size >>= 1;
+
+    int8_t bits = 0;
+    while (size > 0) {
+        size >>= 1;
+        bits++;
+    }
+    return bits;
 }
 
 uint8_t* DosExeEmitter::AllocateBuffer(uint32_t size)

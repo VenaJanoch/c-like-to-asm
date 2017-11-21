@@ -106,6 +106,20 @@
         backpatch->entry->if_statement.op2.exp_type = ExpressionType::Constant; \
     }
 
+#define PrepareIndexedVariableIfNeeded(var)                                     \
+    if (var.exp_type == ExpressionType::Variable && var.index.value) {          \
+        SymbolTableEntry* _decl_index = c.GetUnusedVariable(var.type);          \
+                                                                                \
+        sprintf_s(output_buffer, "%s = %s[%s]", _decl_index->name, var.value, var.index.value); \
+        InstructionEntry* _i = c.AddToStream(InstructionType::Assign, output_buffer);           \
+        _i->assignment.dst_value = _decl_index->name;                           \
+        CopyOperand(_i->assignment.op1, var);                                   \
+                                                                                \
+        var.value = _decl_index->name;                                          \
+        var.type = _decl_index->type;                                           \
+        var.exp_type = ExpressionType::Variable;                                \
+    }
+
 
 class Compiler
 {
