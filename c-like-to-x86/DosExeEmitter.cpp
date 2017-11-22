@@ -2957,12 +2957,10 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
         case ExpressionType::Constant: {
             int32_t value = atoi(i->assignment.op2.value);
 
-            //SaveAndUnloadRegister(CpuRegister::CX);
-            //LoadConstantToRegister(value, CpuRegister::CX, dst_size);
-            //op2_reg = CpuRegister::CX;
-
-            op2_reg = GetUnusedRegister();
-            LoadConstantToRegister(value, op2_reg, dst_size);
+            // DX register cannot be used for this, AX is already used, so load constant to CX
+            SaveAndUnloadRegister(CpuRegister::CX);
+            LoadConstantToRegister(value, CpuRegister::CX, dst_size);
+            op2_reg = CpuRegister::CX;
             break;
         }
         case ExpressionType::Variable: {
