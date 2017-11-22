@@ -48,6 +48,9 @@
     <ClInclude Include="TinyFormat.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
+    <ClInclude Include="SuppressRegister.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="parser.tab.cpp">
@@ -63,6 +66,9 @@
       <Filter>Zdrojové soubory</Filter>
     </ClCompile>
     <ClCompile Include="Log.cpp">
+      <Filter>Zdrojové soubory</Filter>
+    </ClCompile>
+    <ClCompile Include="SuppressRegister.cpp">
       <Filter>Zdrojové soubory</Filter>
     </ClCompile>
   </ItemGroup>

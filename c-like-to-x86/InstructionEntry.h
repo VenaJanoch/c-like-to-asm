@@ -74,7 +74,7 @@ struct InstructionEntry {
         } assignment;
 
         struct {
-            uint32_t ip;
+            int32_t ip;
         } goto_statement;
 
         struct {
@@ -82,7 +82,7 @@ struct InstructionEntry {
         } goto_label_statement;
 
         struct {
-            uint32_t ip;
+            int32_t ip;
 
             CompareType type;
 
