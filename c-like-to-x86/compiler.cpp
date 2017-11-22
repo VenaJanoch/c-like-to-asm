@@ -765,7 +765,7 @@ void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameter
         }
 
         // Add required parameter to stream
-        char buffer[50];
+        char buffer[500];
         sprintf_s(buffer, "push %s", call_parameters->name);
         InstructionEntry* i = AddToStream(InstructionType::Push, buffer);
         i->push_statement.symbol = call_parameters;

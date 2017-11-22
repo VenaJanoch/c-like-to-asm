@@ -17,7 +17,7 @@ extern FILE* yyin;
 extern int yylineno;
 extern char* yytext;
 
-char output_buffer[64];
+char output_buffer[500];
 
 Compiler c;
 

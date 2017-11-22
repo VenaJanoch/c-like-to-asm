@@ -43,7 +43,7 @@ uint8 Main()
 				PrintUint32(key);
 				PrintNewLine();
 
-				return;
+				return 0;
 
 			}
 
