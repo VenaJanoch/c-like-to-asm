@@ -17,9 +17,10 @@
 enum struct DosBackpatchType {
     Unknown,
 
-    ToRel8,     // Relative address (8-bit)
+    ToRel8,     // Relative address (signed 8-bit)
     ToRel16,    // Relative address (16-bit)
     ToDsAbs16,  // Absolute address to DS segment (16-bit)
+    ToStack8    // Relative address (signed 8-bit)
 };
 
 enum struct DosBackpatchTarget {
@@ -29,6 +30,7 @@ enum struct DosBackpatchTarget {
     Label,      // Named label
     Function,   // Function
     String,     // String
+    Local,      // Local variable
     Static      // Static variable
 };
 
@@ -83,6 +85,7 @@ struct DosVariableDescriptor {
     int32_t location;
 
     uint32_t last_used;
+    uint32_t ref_count;
 
     bool is_dirty;
 };
@@ -126,9 +129,38 @@ struct MzRelocEntry {
 #define ToXrm(x, r, m)  \
     (uint8_t)((((uint8_t)(x) << 6) & 0xC0) | (((uint8_t)(r) << 3) & 0x38) | ((uint8_t)(m) & 0x07))
 
+#define BackpatchLocal(ptr, var)                                    \
+    {                                                               \
+        if (!(var)->location) {                                     \
+            backpatch.push_back({                                   \
+                DosBackpatchType::ToStack8, DosBackpatchTarget::Local,  \
+                (uint32_t)((ptr) - buffer), 0, 0, (var)->symbol->name   \
+            });                                                     \
+            (var)->ref_count++;                                     \
+        } else {                                                    \
+            *(ptr) = (int8_t)(var)->location;                       \
+        }                                                           \
+    }
+
+#define BackpatchStatic(ptr, var)                                   \
+    backpatch.push_back({                                           \
+        DosBackpatchType::ToDsAbs16, DosBackpatchTarget::Static,    \
+        (uint32_t)((ptr) - buffer), 0, 0, (var)->symbol->name       \
+    });
+
+#define BackpatchString(ptr, str)                                   \
+    {                                                               \
+        strings.insert(str);                                        \
+        backpatch.push_back({                                       \
+            DosBackpatchType::ToDsAbs16, DosBackpatchTarget::String,\
+            (uint32_t)((ptr) - buffer), 0, 0, str                   \
+        });                                                         \
+    }
 
 class DosExeEmitter
 {
+    friend class SuppressRegister;
+
 public:
     DosExeEmitter(Compiler* compiler);
     ~DosExeEmitter();
@@ -256,7 +288,7 @@ private:
 
     // Backpatching
     void BackpatchAddresses();
-    void BackpatchLabels(DosLabel& label, DosBackpatchTarget target);
+    void BackpatchLabels(const DosLabel& label, DosBackpatchTarget target);
     void CheckBackpatchListIsEmpty(DosBackpatchTarget target);
     void CheckReturnStatementPresent();
 
@@ -266,6 +298,8 @@ private:
     void EmitEntryPointPrologue(SymbolTableEntry* function);
 
     void EmitFunctionPrologue(SymbolTableEntry* function, SymbolTableEntry* symbol_table);
+
+    void EmitFunctionEpilogue();
 
     void EmitAssign(InstructionEntry* i);
     inline void EmitAssignNone(InstructionEntry* i);
@@ -316,10 +350,10 @@ private:
 
     Compiler* compiler;
 
-    uint32_t ip_src = 0;
-    uint32_t ip_dst = 0;
+    int32_t ip_src = 0;
+    int32_t ip_dst = 0;
 
-    uint32_t static_size = 0;
+    int32_t static_size = 0;
 
     std::map<uint32_t, uint32_t> ip_src_to_dst;
     std::list<DosBackpatchInstruction> backpatch;
@@ -327,9 +361,12 @@ private:
     std::list<DosLabel> functions;
     std::list<DosLabel> labels;
     std::unordered_set<char*> strings;
+
+    std::unordered_set<CpuRegister> suppressed_registers;
     
     SymbolTableEntry* parent = nullptr;
-    uint32_t parent_end_ip = 0;
+    int32_t parent_end_ip = 0;
+    uint32_t parent_stack_offset = 0;
     InstructionEntry* current_instruction = nullptr;
     bool was_return = false;
 
