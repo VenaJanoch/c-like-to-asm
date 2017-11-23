@@ -477,11 +477,88 @@ void DosExeEmitter::EmitSharedFunctions()
     });
 
     EmitSharedFunction("GetCommandLine", [&]() {
-        //   mov eax, 0x81
-        uint8_t* l1 = AllocateBufferForInstruction(2 + 4);
-        l1[0] = 0x66;                           // Operand size prefix
-        l1[0] = ToOpR(0xB8, CpuRegister::AX);   // mov eax, imm32
-        *(uint32_t*)(l1 + 2) = 0x81;            // Pointer to PSP Command-line
+        //   mov cl, [0x80]
+        //uint8_t* l1 = AllocateBufferForInstruction(2 + 2);
+        //l1[0] = 0x8A;    // mov r8, rm8
+        //l1[1] = ToXrm(0, CpuRegister::CL, 6);
+        //*(uint16_t*)(l1 + 2) = 0x80;
+
+        //   mov si, (0x81 - 1)
+        LoadConstantToRegister(0x81 - 1, CpuRegister::SI, 2);
+
+        uint32_t loop1 = ip_dst;
+
+        // Go forward and find first non-whitespace character
+        //   inc si
+        uint8_t* l3 = AllocateBufferForInstruction(1);
+        l3[0] = ToOpR(0x40, CpuRegister::SI);   // inc r16
+
+        //   cmp [si], ' '
+        uint8_t* l4 = AllocateBufferForInstruction(2 + 1);
+        l4[0] = 0x80;   // cmp rm8, imm8
+        l4[1] = ToXrm(0, 7, 4);
+        l4[2] = ' ';
+
+        //   jz [loop1]
+        uint8_t* l5 = AllocateBufferForInstruction(1 + 1);
+        l5[0] = 0x74;   // jz rel8
+        l5[1] = (int8_t)(loop1 - ip_dst);
+
+        // Save starting address to AX
+        //   mov ax, si
+        uint8_t* l6 = AllocateBufferForInstruction(2);
+        l6[0] = 0x8B;   // mov r16, rm16
+        l6[1] = ToXrm(3, CpuRegister::AX, CpuRegister::SI);
+
+        //   dec si
+        uint8_t* l7 = AllocateBufferForInstruction(1);
+        l7[0] = ToOpR(0x48, CpuRegister::SI);   // dec r16
+
+        uint32_t loop2 = ip_dst;
+
+        // Go forward and find CR
+        //   inc si
+        uint8_t* l8 = AllocateBufferForInstruction(1);
+        l8[0] = ToOpR(0x40, CpuRegister::SI);   // inc r16
+
+        //   cmp [si], '\r'
+        uint8_t* l9 = AllocateBufferForInstruction(2 + 1);
+        l9[0] = 0x80;   // cmp rm8, imm8
+        l9[1] = ToXrm(0, 7, 4);
+        l9[2] = '\r';
+
+        //   jnz [loop2]
+        uint8_t* l10 = AllocateBufferForInstruction(1 + 1);
+        l10[0] = 0x75;   // jnz rel8
+        l10[1] = (int8_t)(loop2 - ip_dst);
+
+        uint32_t loop3 = ip_dst;
+
+        // Go backward and find first non-whitespace character
+        //   dec si
+        uint8_t* l11 = AllocateBufferForInstruction(1);
+        l11[0] = ToOpR(0x48, CpuRegister::SI);   // dec r16
+
+        //   cmp [si], ' '
+        uint8_t* l12 = AllocateBufferForInstruction(2 + 1);
+        l12[0] = 0x80;   // cmp rm8, imm8
+        l12[1] = ToXrm(0, 7, 4);
+        l12[2] = ' ';
+
+        //   jz [loop3]
+        uint8_t* l13 = AllocateBufferForInstruction(1 + 1);
+        l13[0] = 0x74;   // jz rel8
+        l13[1] = (int8_t)(loop3 - ip_dst);
+
+        //   inc si
+        uint8_t* l14 = AllocateBufferForInstruction(1);
+        l14[0] = ToOpR(0x40, CpuRegister::SI);   // inc r16
+
+        //   mov [si], '\0'
+        uint8_t* l15 = AllocateBufferForInstruction(2 + 1);
+        l15[0] = 0xC6;   // mov rm8, imm8
+        l15[1] = ToXrm(0, 0, 4);
+        l15[2] = 0x00;   // '\0'
 
         //   retn
         uint8_t* ret = AllocateBufferForInstruction(1);
@@ -3776,7 +3853,7 @@ void DosExeEmitter::EmitSharedFunction(char* name, std::function<void()> emitter
     while (symbol) {
         if (symbol->type == SymbolType::SharedFunction && strcmp(symbol->name, name) == 0) {
             if (symbol->ip > 0) {
-                Log::Write(LogType::Info, "Emitting \"%\"...", name);
+                Log::Write(LogType::Info, "Emitting \"%s\"...", name);
 
                 // Function is referenced
                 BackpatchLabels({ name, ip_dst }, DosBackpatchTarget::Function);

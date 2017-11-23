@@ -1,8 +1,7 @@
 uint8 Main(){
 
+	String string1 = GetCommandLine();
 
-//	String string1 = GetCommandLine();
-	String string1 = "Kocka";
 	PrintString("Vase slovo je ");
 	PrintString(string1);
 	PrintNewLine();
@@ -15,25 +14,25 @@ uint8 Main(){
 
 	bool exist = false;
 
-	if (StringsEqual(string1, word1)) {
+	if (string1 == word1) {
 		PrintString(string1);
 		PrintString(" se nachazi ve slovniku, zde je jeho vyznam1: ");
 		PrintNewLine();
 		PrintString("Pes domácí(Canis lupus f.familiaris) je nejvìtší domestikovaná	šelma a jedno z nejstarších domestikovaných zvíøat vùbec, provázející èlovìka minimálnì 14 tisíc let");
 		exist = true;
-	}else if (StringsEqual(string1, word2)) {
+	}else if (string1 == word2) {
 		PrintString(string1);
 		PrintString(" se nachazi ve slovniku, zde je jeho vyznam2: ");
 		PrintNewLine();
 		PrintString("Koèka domácí (Felis silvestris f. catus) je domestikovaná forma koèky divoké, která je již po tisíciletí prùvodcem èlovìka.");
 		exist = true;
-	}else if (StringsEqual(string1, word3)) {
+	}else if (string1 == word3) {
 		PrintString(string1);
 		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: 3");
 		PrintNewLine();
 		PrintString("Prase je èeské jméno pro nìkolik pøíbuzných rodù nepøežvýkavých sudokopytníkù, patøících do èeledi prasatovitých a podèeledí pravá prasata (Suinae) nebo bradaviènatá prasata");
 		exist = true;
-	}else if (StringsEqual(string1, word4)) {
+	}else if (string1 == word4) {
 		PrintString(string1);
 		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: 4");
 		PrintNewLine();
