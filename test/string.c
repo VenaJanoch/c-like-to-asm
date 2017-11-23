@@ -1,8 +1,8 @@
 uint8 Main(){
 
 
-	String string1 = GetCommandLine();
-	//String string1 = "Ahoj";
+//	String string1 = GetCommandLine();
+	String string1 = "Kocka";
 	PrintString("Vase slovo je ");
 	PrintString(string1);
 	PrintNewLine();
@@ -17,42 +17,35 @@ uint8 Main(){
 
 	if (StringsEqual(string1, word1)) {
 		PrintString(string1);
-		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: ");
+		PrintString(" se nachazi ve slovniku, zde je jeho vyznam1: ");
 		PrintNewLine();
 		PrintString("Pes domácí(Canis lupus f.familiaris) je nejvìtší domestikovaná	šelma a jedno z nejstarších domestikovaných zvíøat vùbec, provázející èlovìka minimálnì 14 tisíc let");
 		exist = true;
-	}
-	if (StringsEqual(string1, word2)) {
+	}else if (StringsEqual(string1, word2)) {
 		PrintString(string1);
-		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: ");
+		PrintString(" se nachazi ve slovniku, zde je jeho vyznam2: ");
 		PrintNewLine();
 		PrintString("Koèka domácí (Felis silvestris f. catus) je domestikovaná forma koèky divoké, která je již po tisíciletí prùvodcem èlovìka.");
 		exist = true;
-	}
-	if (StringsEqual(string1, word3)) {
+	}else if (StringsEqual(string1, word3)) {
 		PrintString(string1);
-		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: ");
+		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: 3");
 		PrintNewLine();
 		PrintString("Prase je èeské jméno pro nìkolik pøíbuzných rodù nepøežvýkavých sudokopytníkù, patøících do èeledi prasatovitých a podèeledí pravá prasata (Suinae) nebo bradaviènatá prasata");
 		exist = true;
-	}
-	if (StringsEqual(string1, word4)) {
+	}else if (StringsEqual(string1, word4)) {
 		PrintString(string1);
-		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: ");
+		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: 4");
 		PrintNewLine();
 		PrintString("Tur domácí (Bos primigenius f. taurus) je domestikovaný sudokopytnatý savec celosvìtovì chovaný pro mnohostranný hospodáøský užitek. Spoleènì s kurem domácím jde v celosvìtovém mìøítku o nejpoèetnìjší druh chovaného hospodáøského zvíøete.");
 		exist = true;
-	}
-	if (string1 == word5)) {
+	}else if (string1 == word5) {
 		PrintString(string1);
-		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: ");
+		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: 5");
 		PrintNewLine();
 		PrintString("Kùò domácí (Equus caballus) nebo pouze kùò je domestikované zvíøe patøící mezi lichokopytníky. V minulosti se konì používali pøedevším k pøepravì. Od 20. století se na nich jezdí hlavnì rekreaènì.");
 		exist = true;
-	}
-	
-	if(!exist){
-		
+	}else{
 		PrintString("Vase slovo ");
 		PrintString(string1);
 		PrintString(" se bohuzel nenachazi ve slovniku");
