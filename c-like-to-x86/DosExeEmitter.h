@@ -228,7 +228,7 @@ private:
     /// <summary>
     /// Save all unsaved variables to stack and unreference all registers
     /// </summary>
-    void SaveAndUnloadAllRegisters();
+    void SaveAndUnloadAllRegisters(bool force);
 
     /// <summary>
     /// Destroy connection of variable with register
