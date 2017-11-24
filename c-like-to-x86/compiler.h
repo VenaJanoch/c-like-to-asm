@@ -123,12 +123,38 @@
         var.exp_type = ExpressionType::Variable;                                \
     }
 
-#define PrepareExpressionForLogical(exp)                                        \
-    if (exp.type != SymbolType::Bool) {                                         \
-        sprintf_s(output_buffer, "if (%s != 0) goto", exp.value);               \
-        CreateIfConstWithBackpatch(exp.true_list, CompareType::NotEqual, exp, "0");         \
-        sprintf_s(output_buffer, "goto");                                       \
-        exp.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);  \
+#define PrepareIndexedVariableIfNeededMarker(var, marker)                       \
+    if (var.exp_type == ExpressionType::Variable && var.index.value) {          \
+        SymbolTableEntry* _decl_index = c.GetUnusedVariable(var.type);          \
+                                                                                \
+        sprintf_s(output_buffer, "%s = %s[%s]", _decl_index->name, var.value, var.index.value); \
+        InstructionEntry* _i = c.AddToStream(InstructionType::Assign, output_buffer);           \
+        _i->assignment.dst_value = _decl_index->name;                           \
+        CopyOperand(_i->assignment.op1, var);                                   \
+                                                                                \
+        var.value = _decl_index->name;                                          \
+        var.type = _decl_index->type;                                           \
+        var.exp_type = ExpressionType::Variable;                                \
+                                                                                \
+        marker.ip += 1;                                                         \
+    }
+
+#define PrepareExpressionsForLogical(exp1, marker, exp2)                        \
+    {                                                                           \
+        if (exp1.type != SymbolType::Bool) {                                    \
+                sprintf_s(output_buffer, "if (%s != 0) goto", exp1.value);      \
+                CreateIfConstWithBackpatch(exp1.true_list, CompareType::NotEqual, exp1, "0");       \
+                sprintf_s(output_buffer, "goto");                               \
+                exp1.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer); \
+                                                                                \
+                marker.ip += 2;                                                 \
+        }                                                                       \
+        if (exp2.type != SymbolType::Bool) {                                    \
+                sprintf_s(output_buffer, "if (%s != 0) goto", exp2.value);      \
+                CreateIfConstWithBackpatch(exp2.true_list, CompareType::NotEqual, exp2, "0");       \
+                sprintf_s(output_buffer, "goto");                               \
+                exp2.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer); \
+        }                                                                       \
     }
 
 #define PreAssign(exp)                                                          \
@@ -174,6 +200,24 @@
             _i->assignment.op1.value = _strdup("0");                            \
             _i->assignment.op1.type = SymbolType::Bool;                         \
             _i->assignment.op1.exp_type = ExpressionType::Constant;             \
+        }                                                                       \
+    }
+
+#define PreIfMarker(marker)                                                     \
+    SymbolTableEntry* _decl_if = nullptr;                                       \
+    {                                                                           \
+        if (c.IsScopeActive(ScopeType::Assign)) {                               \
+            _decl_if = c.GetUnusedVariable(SymbolType::Bool);                   \
+                                                                                \
+            sprintf_s(output_buffer, "%s = 0", _decl_if->name);                 \
+            InstructionEntry* _i = c.AddToStream(InstructionType::Assign, output_buffer);   \
+            _i->assignment.type = AssignType::None;                             \
+            _i->assignment.dst_value = _decl_if->name;                          \
+            _i->assignment.op1.value = _strdup("0");                            \
+            _i->assignment.op1.type = SymbolType::Bool;                         \
+            _i->assignment.op1.exp_type = ExpressionType::Constant;             \
+                                                                                \
+            marker.ip += 1;                                                     \
         }                                                                       \
     }
 

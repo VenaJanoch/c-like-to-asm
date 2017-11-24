@@ -1035,13 +1035,11 @@ expression
 			CheckIsIntOrBool($4, "Specified type is not allowed in logical operations", @4);
 
 			// Move indexed variables to temp. variables
-			PrepareIndexedVariableIfNeeded($1);
-			PrepareIndexedVariableIfNeeded($4);
-
-			PrepareExpressionForLogical($1);
-			PrepareExpressionForLogical($4);
-
-			PreIf();
+			PrepareIndexedVariableIfNeededMarker($1, $3);
+			PrepareIndexedVariableIfNeededMarker($4, $3);
+			
+			PreIfMarker($3);
+			PrepareExpressionsForLogical($1, $3, $4);
 
             $$.true_list = MergeLists($1.true_list, $4.true_list);
             c.BackpatchStream($1.false_list, $3.ip);
@@ -1055,13 +1053,11 @@ expression
 			CheckIsIntOrBool($4, "Specified type is not allowed in logical operations", @4);
 
 			// Move indexed variables to temp. variables
-			PrepareIndexedVariableIfNeeded($1);
-			PrepareIndexedVariableIfNeeded($4);
-
-            PrepareExpressionForLogical($1);
-			PrepareExpressionForLogical($4);
-
-			PreIf();
+			PrepareIndexedVariableIfNeededMarker($1, $3);
+			PrepareIndexedVariableIfNeededMarker($4, $3);
+			
+			PreIfMarker($3);
+            PrepareExpressionsForLogical($1, $3, $4);
 
             $$.false_list = MergeLists($1.false_list, $4.false_list);
             c.BackpatchStream($1.true_list, $3.ip);
