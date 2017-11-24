@@ -274,7 +274,7 @@ return_type
 statement_list
     : statement
         {
-            LogDebug("P: Processing single statement in list statement list");
+            LogDebug("P: Processing single statement in statement list");
 
             $$.next_list = $1.next_list;
         }
@@ -740,7 +740,7 @@ assignment
 
             $$ = $1;
         }
-    | id '=' assignment
+    | id '=' assign_marker assignment
         {
             LogDebug("P: Found assignment");
 
@@ -761,7 +761,7 @@ assignment
                     message, @1.first_line, @1.first_column);
             }
 
-            if (!c.CanImplicitCast(decl->type, $3.type, $3.exp_type)) {
+            if (!c.CanImplicitCast(decl->type, $4.type, $4.exp_type)) {
                 std::string message = "Cannot assign to variable \"";
                 message += $1;
                 message += "\" because of type mismatch";
@@ -769,24 +769,28 @@ assignment
                     message, @1.first_line, @1.first_column);
             }
 
-			if ($3.index.value) {
-				sprintf_s(output_buffer, "%s = %s[%s]", $1, $3.value, $3.index.value);
+			PreAssign($4);
+
+			if ($4.index.value) {
+				sprintf_s(output_buffer, "%s = %s[%s]", $1, $4.value, $4.index.value);
 			} else {
-				sprintf_s(output_buffer, "%s = %s", $1, $3.value);
+				sprintf_s(output_buffer, "%s = %s", $1, $4.value);
 			}
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::None;
             i->assignment.dst_value = decl->name;
-            CopyOperand(i->assignment.op1, $3);
+            CopyOperand(i->assignment.op1, $4);
 
-			$$.true_list = $3.true_list;
+			//$$.true_list = $4.true_list;
 
 			$$.value = $1;
             $$.type = decl->type;
             $$.exp_type = ExpressionType::Variable;
 			$$.index.value = nullptr;
+
+			PostAssign($$, $4);
         }
-	| id '[' expression ']' '=' assignment
+	| id '[' expression ']' '=' assign_marker assignment
         {
             LogDebug("P: Found array assignment");
 
@@ -807,7 +811,7 @@ assignment
                     message, @1.first_line, @1.first_column);
             }
 
-            if (!c.CanImplicitCast(decl->type, $6.type, $6.exp_type)) {
+            if (!c.CanImplicitCast(decl->type, $7.type, $7.exp_type)) {
                 std::string message = "Cannot assign to variable \"";
                 message += $1;
                 message += "\" because of type mismatch";
@@ -828,10 +832,12 @@ assignment
 			// Move indexed variables to temp. variables
 			PrepareIndexedVariableIfNeeded($3);
 
-			if ($6.index.value) {
-				sprintf_s(output_buffer, "%s[%s] = %s[%s]", $1, $3.value, $6.value, $6.index.value);
+			PreAssign($7);
+
+			if ($7.index.value) {
+				sprintf_s(output_buffer, "%s[%s] = %s[%s]", $1, $3.value, $7.value, $7.index.value);
 			} else {
-				sprintf_s(output_buffer, "%s[%s] = %s", $1, $3.value, $6.value);
+				sprintf_s(output_buffer, "%s[%s] = %s", $1, $3.value, $7.value);
 			}
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::None;
@@ -839,9 +845,9 @@ assignment
 			i->assignment.dst_index.value = $3.value;
 			i->assignment.dst_index.type = $3.type;
 			i->assignment.dst_index.exp_type = $3.exp_type;
-			CopyOperand(i->assignment.op1, $6);
+			CopyOperand(i->assignment.op1, $7);
 
-            $$.true_list = $6.true_list;
+            //$$.true_list = $7.true_list;
 
 			$$.value = $1;
 			$$.type = decl->type;
@@ -849,6 +855,8 @@ assignment
             $$.index.value = $3.value;
 			$$.index.type = $3.type;
 			$$.index.exp_type = $3.exp_type;
+
+			PostAssign($$, $7);
         }
     ;
 
@@ -888,18 +896,18 @@ assignment_with_declaration
             i->assignment.dst_value = decl->name;
             CopyOperand(i->assignment.op1, $5);
 
-			$$.true_list = $5.true_list;
+			//$$.true_list = $5.true_list;
 
 			$$.value = $3;
             $$.type = $2;
             $$.exp_type = ExpressionType::Constant;
 			$$.index.value = nullptr;
         }
-    | declaration_type id '=' expression
+    | declaration_type id '=' assign_marker expression
         {
             LogDebug("P: Found variable declaration with assignment \"" << $2 << "\"");
 
-            if (!c.CanImplicitCast($1, $4.type, $4.exp_type)) {
+            if (!c.CanImplicitCast($1, $5.type, $5.exp_type)) {
                 std::string message = "Cannot assign to variable \"";
                 message += $2;
                 message += "\" because of type mismatch";
@@ -907,24 +915,28 @@ assignment_with_declaration
                     message, @1.first_line, @1.first_column);
             }
 
+			PreAssign($5);
+
             SymbolTableEntry* decl = c.ToDeclarationList($1, 0, $2, ExpressionType::None);
 
-			if ($4.index.value) {
-				sprintf_s(output_buffer, "%s = %s[%s]", $2, $4.value, $4.index.value);
+			if ($5.index.value) {
+				sprintf_s(output_buffer, "%s = %s[%s]", $2, $5.value, $5.index.value);
 			} else {
-				sprintf_s(output_buffer, "%s = %s", $2, $4.value);
+				sprintf_s(output_buffer, "%s = %s", $2, $5.value);
 			}
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
             i->assignment.type = AssignType::None;
             i->assignment.dst_value = decl->name;
-            CopyOperand(i->assignment.op1, $4);
+            CopyOperand(i->assignment.op1, $5);
 			
-			$$.true_list = $4.true_list;
+			//$$.true_list = $5.true_list;
 
 			$$.value = $2;
             $$.type = $1;
             $$.exp_type = ExpressionType::Variable;
 			$$.index.value = nullptr;
+
+			PostAssign($$, $5);
         }
     ;
 
@@ -1019,55 +1031,43 @@ expression
         }
     | expression LOG_OR marker expression
         {
-            if ($1.type != SymbolType::Bool) {
-                sprintf_s(output_buffer, "if (%s != 0) goto", $1.value);
-                CreateIfConstWithBackpatch($1.true_list, CompareType::NotEqual, $1, "0");
-                
-                sprintf_s(output_buffer, "goto");
-                $1.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
-            }
+			CheckIsIntOrBool($1, "Specified type is not allowed in logical operations", @1);
+			CheckIsIntOrBool($4, "Specified type is not allowed in logical operations", @4);
 
-            if ($4.type != SymbolType::Bool) {
-                sprintf_s(output_buffer, "if (%s != 0) goto", $4.value);
-                CreateIfConstWithBackpatch($4.true_list, CompareType::NotEqual, $4, "0");
-                
-                sprintf_s(output_buffer, "goto");
-                $4.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
-            }
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($4);
 
-			// ToDo: Fix assigning to variable
+			PrepareExpressionForLogical($1);
+			PrepareExpressionForLogical($4);
+
+			PreIf();
 
             $$.true_list = MergeLists($1.true_list, $4.true_list);
             c.BackpatchStream($1.false_list, $3.ip);
             $$.false_list = $4.false_list;
-            $$.type = SymbolType::Bool;
-			$$.index.value = nullptr;
+            
+			PostIf($$, $1);
         }
     | expression LOG_AND marker expression
         {
-            if ($1.type != SymbolType::Bool) {
-                sprintf_s(output_buffer, "if (%s != 0) goto", $1.value);
-                CreateIfConstWithBackpatch($1.true_list, CompareType::NotEqual, $1, "0");
+			CheckIsIntOrBool($1, "Specified type is not allowed in logical operations", @1);
+			CheckIsIntOrBool($4, "Specified type is not allowed in logical operations", @4);
 
-                sprintf_s(output_buffer, "goto");
-                $1.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
-            }
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($4);
 
-            if ($4.type != SymbolType::Bool) {
-                sprintf_s(output_buffer, "if (%s != 0) goto", $4.value);
-                CreateIfConstWithBackpatch($4.true_list, CompareType::NotEqual, $4, "0");
+            PrepareExpressionForLogical($1);
+			PrepareExpressionForLogical($4);
 
-                sprintf_s(output_buffer, "goto");
-                $4.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
-            }
-
-			// ToDo: Fix assigning to variable
+			PreIf();
 
             $$.false_list = MergeLists($1.false_list, $4.false_list);
             c.BackpatchStream($1.true_list, $3.ip);
             $$.true_list = $4.true_list;
-            $$.type = SymbolType::Bool;
-			$$.index.value = nullptr;
+            
+			PostIf($$, $1);
         }
     | expression NOT_EQUAL expression
         {
@@ -1082,17 +1082,14 @@ expression
 			PrepareIndexedVariableIfNeeded($1);
 			PrepareIndexedVariableIfNeeded($3);
 
+			PreIf();
+
             sprintf_s(output_buffer, "if (%s != %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::NotEqual, $1, $3);
-
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-            // ToDo: Fix assigning to variable
-
-            $$.type = SymbolType::Bool;
-            $$.exp_type = ExpressionType::None;
-			$$.index.value = nullptr;
+            PostIf($$, $1);
         }
     | expression EQUAL expression
         {
@@ -1107,9 +1104,10 @@ expression
 			PrepareIndexedVariableIfNeeded($1);
 			PrepareIndexedVariableIfNeeded($3);
 
+			PreIf();
+
             sprintf_s(output_buffer, "if (%s == %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::Equal, $1, $3);
-
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
@@ -1122,11 +1120,7 @@ expression
                 $$.false_list = MergeLists($$.false_list, $3.false_list);
             }
             
-			// ToDo: Fix assigning to variable
-
-            $$.type = SymbolType::Bool;
-            $$.exp_type = ExpressionType::None;
-			$$.index.value = nullptr;
+			PostIf($$, $1);
         }
     | expression GREATER_OR_EQUAL expression
         {
@@ -1139,17 +1133,14 @@ expression
 			PrepareIndexedVariableIfNeeded($1);
 			PrepareIndexedVariableIfNeeded($3);
 
+			PreIf();
+
             sprintf_s(output_buffer, "if (%s >= %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::GreaterOrEqual, $1, $3);
-
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-            // ToDo: Fix assigning to variable
-
-            $$.type = SymbolType::Bool;
-            $$.exp_type = ExpressionType::None;
-			$$.index.value = nullptr;
+            PostIf($$, $1);
         }
     | expression LESS_OR_EQUAL expression
         {
@@ -1162,17 +1153,14 @@ expression
 			PrepareIndexedVariableIfNeeded($1);
 			PrepareIndexedVariableIfNeeded($3);
 
+			PreIf();
+
             sprintf_s(output_buffer, "if (%s <= %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::LessOrEqual, $1, $3);
-
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-            // ToDo: Fix assigning to variable
-
-            $$.type = SymbolType::Bool;
-            $$.exp_type = ExpressionType::None;
-            $$.index.value = nullptr;
+            PostIf($$, $1);
         }
     | expression '>' expression
         {
@@ -1185,17 +1173,14 @@ expression
 			PrepareIndexedVariableIfNeeded($1);
 			PrepareIndexedVariableIfNeeded($3);
 
+			PreIf();
+
             sprintf_s(output_buffer, "if (%s > %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::Greater, $1, $3);
-
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-            // ToDo: Fix assigning to variable
-
-            $$.type = SymbolType::Bool;
-            $$.exp_type = ExpressionType::None;
-			$$.index.value = nullptr;
+            PostIf($$, $1);
         }
     | expression '<' expression
         {
@@ -1208,17 +1193,14 @@ expression
 			PrepareIndexedVariableIfNeeded($1);
 			PrepareIndexedVariableIfNeeded($3);
 
+			PreIf();
+
             sprintf_s(output_buffer, "if (%s < %s) goto", $1.value, $3.value);
             CreateIfWithBackpatch($$.true_list, CompareType::Less, $1, $3);
-
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-            // ToDo: Fix assigning to variable
-
-            $$.type = SymbolType::Bool;
-            $$.exp_type = ExpressionType::None;
-			$$.index.value = nullptr;
+            PostIf($$, $1);
         }
     | expression SHIFT_LEFT expression
         {
@@ -1693,6 +1675,14 @@ jump_marker
             $$.next_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
         }
     ;
+
+assign_marker
+	:	{
+			LogDebug("P: Generating assign marker");
+
+			c.IncreaseScope(ScopeType::Assign);
+		}
+	;
 
 break_marker
     :   {

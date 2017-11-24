@@ -3177,38 +3177,57 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
 {
     switch (i->if_statement.op2.exp_type) {
         case ExpressionType::Constant: {
-            DosVariableDescriptor* op1 = FindVariableByName(i->if_statement.op1.value);
+            switch (i->if_statement.op1.exp_type) {
+                case ExpressionType::Constant: {
+                    int32_t value1 = atoi(i->if_statement.op1.value);
+                    int32_t value2 = atoi(i->if_statement.op2.value);
 
-            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
+                    if (IfConstexpr(i->if_statement.type, value1, value2)) {
+                        uint8_t* a = AllocateBufferForInstruction(1 + 1);
+                        a[0] = 0xEB;   // jmp rel8
 
-            int32_t value = atoi(i->if_statement.op2.value);
-
-            CpuRegister reg_dst = LoadVariableUnreferenced(op1, op1_size);
-
-            uint8_t type = (i->if_statement.type == CompareType::LogOr ? 1 : 0);
-
-            // ToDo: This should be max(op1_size, op2_size)
-            switch (op1_size) {
-                case 1: {
-                    uint8_t* a = AllocateBufferForInstruction(2 + 1);
-                    a[0] = 0x80;   // or/and rm8, imm8
-                    a[1] = ToXrm(3, type, reg_dst);
-                    *(uint8_t*)(a + 2) = (int8_t)value;
+                        goto_ptr = a + 1;
+                    }
                     break;
                 }
-                case 2: {
-                    uint8_t* a = AllocateBufferForInstruction(2 + 2);
-                    a[0] = 0x81;   // or/and rm16, imm16
-                    a[1] = ToXrm(3, type, reg_dst);
-                    *(uint16_t*)(a + 2) = (int16_t)value;
-                    break;
-                }
-                case 4: {
-                    uint8_t* a = AllocateBufferForInstruction(3 + 4);
-                    a[0] = 0x66;   // Operand size prefix
-                    a[1] = 0x81;   // or/and rm32, imm32
-                    a[2] = ToXrm(3, type, reg_dst);
-                    *(uint32_t*)(a + 3) = (int32_t)value;
+                case ExpressionType::Variable: {
+                    DosVariableDescriptor* op1 = FindVariableByName(i->if_statement.op1.value);
+
+                    int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
+
+                    int32_t value = atoi(i->if_statement.op2.value);
+
+                    CpuRegister reg_dst = LoadVariableUnreferenced(op1, op1_size);
+
+                    uint8_t type = (i->if_statement.type == CompareType::LogOr ? 1 : 0);
+
+                    // ToDo: This should be max(op1_size, op2_size)
+                    switch (op1_size) {
+                        case 1: {
+                            uint8_t* a = AllocateBufferForInstruction(2 + 1);
+                            a[0] = 0x80;   // or/and rm8, imm8
+                            a[1] = ToXrm(3, type, reg_dst);
+                            *(uint8_t*)(a + 2) = (int8_t)value;
+                            break;
+                        }
+                        case 2: {
+                            uint8_t* a = AllocateBufferForInstruction(2 + 2);
+                            a[0] = 0x81;   // or/and rm16, imm16
+                            a[1] = ToXrm(3, type, reg_dst);
+                            *(uint16_t*)(a + 2) = (int16_t)value;
+                            break;
+                        }
+                        case 4: {
+                            uint8_t* a = AllocateBufferForInstruction(3 + 4);
+                            a[0] = 0x66;   // Operand size prefix
+                            a[1] = 0x81;   // or/and rm32, imm32
+                            a[2] = ToXrm(3, type, reg_dst);
+                            *(uint32_t*)(a + 3) = (int32_t)value;
+                            break;
+                        }
+
+                        default: ThrowOnUnreachableCode();
+                    }
                     break;
                 }
 
@@ -3327,35 +3346,54 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
 {
     switch (i->if_statement.op2.exp_type) {
         case ExpressionType::Constant: {
-            DosVariableDescriptor* op1 = FindVariableByName(i->if_statement.op1.value);
-            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
+            switch (i->if_statement.op1.exp_type) {
+                case ExpressionType::Constant: {
+                    int32_t value1 = atoi(i->if_statement.op1.value);
+                    int32_t value2 = atoi(i->if_statement.op2.value);
 
-            int32_t value = atoi(i->if_statement.op2.value);
+                    if (IfConstexpr(i->if_statement.type, value1, value2)) {
+                        uint8_t* a = AllocateBufferForInstruction(1 + 1);
+                        a[0] = 0xEB;   // jmp rel8
 
-            CpuRegister reg_dst = LoadVariableUnreferenced(op1, op1_size);
-
-            // ToDo: This should be max(op1_size, op2_size)
-            switch (op1_size) {
-                case 1: {
-                    uint8_t* a = AllocateBufferForInstruction(2 + 1);
-                    a[0] = 0x80;    // cmp rm8, imm8
-                    a[1] = ToXrm(3, 7, reg_dst);
-                    *(uint8_t*)(a + 2) = (int8_t)value;
+                        goto_ptr = a + 1;
+                    }
                     break;
                 }
-                case 2: {
-                    uint8_t* a = AllocateBufferForInstruction(2 + 2);
-                    a[0] = 0x81;    // cmp rm16, imm16
-                    a[1] = ToXrm(3, 7, reg_dst);
-                    *(uint16_t*)(a + 2) = (int16_t)value;
-                    break;
-                }
-                case 4: {
-                    uint8_t* a = AllocateBufferForInstruction(3 + 4);
-                    a[0] = 0x66;    // Operand size prefix
-                    a[1] = 0x81;    // cmp rm32, imm32
-                    a[2] = ToXrm(3, 7, reg_dst);
-                    *(uint32_t*)(a + 3) = (int32_t)value;
+                case ExpressionType::Variable: {
+                    DosVariableDescriptor* op1 = FindVariableByName(i->if_statement.op1.value);
+                    int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
+
+                    int32_t value = atoi(i->if_statement.op2.value);
+
+                    CpuRegister reg_dst = LoadVariableUnreferenced(op1, op1_size);
+
+                    // ToDo: This should be max(op1_size, op2_size)
+                    switch (op1_size) {
+                        case 1: {
+                            uint8_t* a = AllocateBufferForInstruction(2 + 1);
+                            a[0] = 0x80;    // cmp rm8, imm8
+                            a[1] = ToXrm(3, 7, reg_dst);
+                            *(uint8_t*)(a + 2) = (int8_t)value;
+                            break;
+                        }
+                        case 2: {
+                            uint8_t* a = AllocateBufferForInstruction(2 + 2);
+                            a[0] = 0x81;    // cmp rm16, imm16
+                            a[1] = ToXrm(3, 7, reg_dst);
+                            *(uint16_t*)(a + 2) = (int16_t)value;
+                            break;
+                        }
+                        case 4: {
+                            uint8_t* a = AllocateBufferForInstruction(3 + 4);
+                            a[0] = 0x66;    // Operand size prefix
+                            a[1] = 0x81;    // cmp rm32, imm32
+                            a[2] = ToXrm(3, 7, reg_dst);
+                            *(uint32_t*)(a + 3) = (int32_t)value;
+                            break;
+                        }
+
+                        default: ThrowOnUnreachableCode();
+                    }
                     break;
                 }
 

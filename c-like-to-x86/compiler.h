@@ -123,6 +123,74 @@
         var.exp_type = ExpressionType::Variable;                                \
     }
 
+#define PrepareExpressionForLogical(exp)                                        \
+    if (exp.type != SymbolType::Bool) {                                         \
+        sprintf_s(output_buffer, "if (%s != 0) goto", exp.value);               \
+        CreateIfConstWithBackpatch(exp.true_list, CompareType::NotEqual, exp, "0");         \
+        sprintf_s(output_buffer, "goto");                                       \
+        exp.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);  \
+    }
+
+#define PreAssign(exp)                                                          \
+    int32_t _true_ip, _false_ip;                                                \
+    {                                                                           \
+        _true_ip = c.NextIp();                                                  \
+        if (exp.true_list || exp.false_list) {                                  \
+            sprintf_s(output_buffer, "%s = 1", exp.value);                      \
+            InstructionEntry* _i = c.AddToStream(InstructionType::Assign, output_buffer);   \
+            _i->assignment.type = AssignType::None;                             \
+            _i->assignment.dst_value = exp.value;                               \
+            _i->assignment.op1.value = _strdup("1");                            \
+            _i->assignment.op1.type = SymbolType::Bool;                         \
+            _i->assignment.op1.exp_type = ExpressionType::Constant;             \
+        }                                                                       \
+        _false_ip = c.NextIp();                                                 \
+    }                                                                           \
+
+#define PostAssign(res, exp)                                                    \
+    {                                                                           \
+        if (exp.true_list || exp.false_list) {                                  \
+            if (!exp.true_list || !exp.false_list) {                            \
+                ThrowOnUnreachableCode();                                       \
+            }                                                                   \
+            c.BackpatchStream(exp.true_list, _true_ip);                         \
+            c.BackpatchStream(exp.false_list, _false_ip);                       \
+        }                                                                       \
+        c.ResetScope(ScopeType::Assign);                                        \
+        res.true_list = nullptr;                                                \
+        res.false_list = nullptr;                                               \
+    }
+
+#define PreIf()                                                                 \
+    SymbolTableEntry* _decl_if = nullptr;                                       \
+    {                                                                           \
+        if (c.IsScopeActive(ScopeType::Assign)) {                               \
+            _decl_if = c.GetUnusedVariable(SymbolType::Bool);                   \
+                                                                                \
+            sprintf_s(output_buffer, "%s = 0", _decl_if->name);                 \
+            InstructionEntry* _i = c.AddToStream(InstructionType::Assign, output_buffer);   \
+            _i->assignment.type = AssignType::None;                             \
+            _i->assignment.dst_value = _decl_if->name;                          \
+            _i->assignment.op1.value = _strdup("0");                            \
+            _i->assignment.op1.type = SymbolType::Bool;                         \
+            _i->assignment.op1.exp_type = ExpressionType::Constant;             \
+        }                                                                       \
+    }
+
+#define PostIf(res, exp)                                                        \
+    {                                                                           \
+        if (c.IsScopeActive(ScopeType::Assign)) {                               \
+            res.value = _decl_if->name;                                         \
+            res.exp_type = ExpressionType::Variable;                            \
+                                                                                \
+            c.ResetScope(ScopeType::Assign);                                    \
+        } else {                                                                \
+            res.exp_type = exp.exp_type;                                        \
+        }                                                                       \
+                                                                                \
+        res.type = SymbolType::Bool;                                            \
+        res.index.value = nullptr;                                              \
+    }
 
 class Compiler
 {
@@ -181,6 +249,8 @@ public:
     int32_t GetReturnSymbolTypeSize(ReturnSymbolType type);
 
     void IncreaseScope(ScopeType type);
+    void ResetScope(ScopeType type);
+    bool IsScopeActive(ScopeType type);
     void BackpatchScope(ScopeType type, int32_t new_ip);
     bool AddToScopeList(ScopeType type, BackpatchList* backpatch);
 
@@ -223,6 +293,7 @@ private:
 
     std::vector<BackpatchList*> break_list;
     std::vector<BackpatchList*> continue_list;
+    int32_t assign_scope = 0;
     int32_t break_scope = -1;
     int32_t continue_scope = -1;
 
@@ -231,7 +302,7 @@ private:
 };
 
 /// <summary>
-/// Merge two linked list structures of the same type
+/// Merge two raw linked list structures of the same type
 /// </summary>
 template<typename T>
 T* MergeLists(T* a, T* b)

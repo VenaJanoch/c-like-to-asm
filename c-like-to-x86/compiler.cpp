@@ -1047,6 +1047,11 @@ int32_t Compiler::GetReturnSymbolTypeSize(ReturnSymbolType type)
 void Compiler::IncreaseScope(ScopeType type)
 {
     switch (type) {
+        case ScopeType::Assign: {
+            assign_scope++;
+            break;
+        }
+
         case ScopeType::Break: {
             break_scope++;
             break_list.push_back(nullptr);
@@ -1057,6 +1062,29 @@ void Compiler::IncreaseScope(ScopeType type)
             continue_scope++;
             continue_list.push_back(nullptr);
             break;
+        }
+
+        default: ThrowOnUnreachableCode();
+    }
+}
+
+void Compiler::ResetScope(ScopeType type)
+{
+    switch (type) {
+        case ScopeType::Assign: {
+            assign_scope = 0;
+            break;
+        }
+
+        default: ThrowOnUnreachableCode();
+    }
+}
+
+bool Compiler::IsScopeActive(ScopeType type)
+{
+    switch (type) {
+        case ScopeType::Assign: {
+            return (assign_scope > 0);
         }
 
         default: ThrowOnUnreachableCode();
