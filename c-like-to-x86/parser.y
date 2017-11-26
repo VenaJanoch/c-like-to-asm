@@ -342,7 +342,8 @@ matched_statement
             $$.next_list = nullptr;
             sprintf_s(output_buffer, "return");
             InstructionEntry* i = c.AddToStream(InstructionType::Return, output_buffer);
-            i->return_statement.type = ExpressionType::None;
+			i->return_statement.op.type = SymbolType::None;
+            i->return_statement.op.exp_type = ExpressionType::None;
         }
     | RETURN assignment ';'
         {
@@ -351,8 +352,7 @@ matched_statement
             $$.next_list = nullptr;
             sprintf_s(output_buffer, "return %s", $2.value);
             InstructionEntry* i = c.AddToStream(InstructionType::Return, output_buffer);
-            i->return_statement.value = $2.value;
-            i->return_statement.type = $2.exp_type;
+			CopyOperand(i->return_statement.op, $2);
         }
     | WHILE continue_marker '(' assignment ')' marker break_marker matched_statement jump_marker marker
         {
@@ -1484,15 +1484,7 @@ expression
                 i->call_statement.target = func;
             } else {
                 // Has return value
-                switch (func->return_type) {
-                    case ReturnSymbolType::Bool: $$.type = SymbolType::Bool; break;
-                    case ReturnSymbolType::Uint8: $$.type = SymbolType::Uint8; break;
-                    case ReturnSymbolType::Uint16: $$.type = SymbolType::Uint16; break;
-                    case ReturnSymbolType::Uint32: $$.type = SymbolType::Uint32; break;
-					case ReturnSymbolType::String: $$.type = SymbolType::String; break;
-
-                    default: ThrowOnUnreachableCode();
-                }
+				$$.type = c.ReturnSymbolTypeToSymbolType(func->return_type);
 
                 SymbolTableEntry* decl = c.GetUnusedVariable($$.type);
 
@@ -1533,15 +1525,7 @@ expression
                 i->call_statement.target = func;
             } else {
                 // Has return value
-                switch (func->return_type) {
-                    case ReturnSymbolType::Bool: $$.type = SymbolType::Bool; break;
-                    case ReturnSymbolType::Uint8: $$.type = SymbolType::Uint8; break;
-                    case ReturnSymbolType::Uint16: $$.type = SymbolType::Uint16; break;
-                    case ReturnSymbolType::Uint32: $$.type = SymbolType::Uint32; break;
-					case ReturnSymbolType::String: $$.type = SymbolType::String; break;
-
-                    default: ThrowOnUnreachableCode();
-                }
+				$$.type = c.ReturnSymbolTypeToSymbolType(func->return_type);
 
                 SymbolTableEntry* decl = c.GetUnusedVariable($$.type);
 

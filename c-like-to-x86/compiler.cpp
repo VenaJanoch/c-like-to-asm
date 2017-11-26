@@ -559,6 +559,13 @@ void Compiler::AddFunction(char* name, ReturnSymbolType return_type)
             throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
         }
 
+        if (prototype->return_type != return_type) {
+            std::string message = "Return type does not match for function \"";
+            message += name;
+            message += "\"";
+            throw CompilerException(CompilerExceptionSource::Declaration, message, yylineno, -1);
+        }
+
         // Promote the prototype to complete function
         prototype->type = SymbolType::Function;
         prototype->ip = ip;
@@ -875,8 +882,11 @@ bool Compiler::CanImplicitCast(SymbolType to, SymbolType from, ExpressionType ty
 
 SymbolType Compiler::GetLargestTypeForArithmetic(SymbolType a, SymbolType b)
 {
+    if (!TypeIsValid(a) || !TypeIsValid(b))
+        return SymbolType::Unknown;
     if (a == SymbolType::String || b == SymbolType::String)
         return SymbolType::Unknown;
+
     if (a == SymbolType::Uint32 || b == SymbolType::Uint32)
         return SymbolType::Uint32;
     if (a == SymbolType::Uint16 || b == SymbolType::Uint16)
@@ -900,27 +910,27 @@ SymbolTableEntry* Compiler::GetUnusedVariable(SymbolType type)
     switch (type) {
         case SymbolType::Bool: {
             var_count_bool++;
-            sprintf_s(buffer, "__b_%d", var_count_bool);
+            sprintf_s(buffer, "#b_%d", var_count_bool);
             break;
         }
         case SymbolType::Uint8: {
             var_count_uint8++;
-            sprintf_s(buffer, "__ui8_%d", var_count_uint8);
+            sprintf_s(buffer, "#ui8_%d", var_count_uint8);
             break;
         }
         case SymbolType::Uint16: {
             var_count_uint16++;
-            sprintf_s(buffer, "__ui16_%d", var_count_uint16);
+            sprintf_s(buffer, "#ui16_%d", var_count_uint16);
             break;
         }
         case SymbolType::Uint32: {
             var_count_uint32++;
-            sprintf_s(buffer, "__ui32_%d", var_count_uint32);
+            sprintf_s(buffer, "#ui32_%d", var_count_uint32);
             break;
         }
         case SymbolType::String: {
             var_count_string++;
-            sprintf_s(buffer, "__s_%d", var_count_uint32);
+            sprintf_s(buffer, "#s_%d", var_count_uint32);
             break;
         }
 
@@ -930,42 +940,6 @@ SymbolTableEntry* Compiler::GetUnusedVariable(SymbolType type)
     SymbolTableEntry* decl = ToDeclarationList(type, 0, buffer, ExpressionType::Variable);
     decl->is_temp = true;
     return decl;
-}
-
-
-
-SymbolTableEntry* Compiler::AddSymbol(const char* name, SymbolType type, int32_t size, ReturnSymbolType return_type,
-    ExpressionType exp_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent, bool is_temp)
-{
-    if (!name || strlen(name) == 0) {
-        throw CompilerException(CompilerExceptionSource::Declaration, "Symbol name must not be empty", yylineno, -1);
-    }
-
-    SymbolTableEntry* symbol = new SymbolTableEntry();
-    symbol->name = _strdup(name);
-    symbol->type = type;
-    symbol->size = size;
-    symbol->return_type = return_type;
-    symbol->exp_type = exp_type;
-    symbol->ip = ip;
-    symbol->offset_or_size = offset_or_size;
-    symbol->parameter = parameter;
-    symbol->parent = (parent == nullptr ? nullptr : _strdup(parent));
-    symbol->is_temp = is_temp;
-
-    // Add it to the symbol table
-    SymbolTableEntry* tail = symbol_table;
-    if (tail) {
-        while (tail->next) {
-            tail = tail->next;
-        }
-
-        tail->next = symbol;
-    } else {
-        symbol_table = symbol;
-    }
-
-    return symbol;
 }
 
 const char* Compiler::SymbolTypeToString(SymbolType type)
@@ -1002,6 +976,40 @@ const char* Compiler::ReturnSymbolTypeToString(ReturnSymbolType type)
     }
 }
 
+SymbolTableEntry* Compiler::AddSymbol(const char* name, SymbolType type, int32_t size, ReturnSymbolType return_type,
+    ExpressionType exp_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent, bool is_temp)
+{
+    if (!name || strlen(name) == 0) {
+        throw CompilerException(CompilerExceptionSource::Declaration, "Symbol name must not be empty", yylineno, -1);
+    }
+
+    SymbolTableEntry* symbol = new SymbolTableEntry();
+    symbol->name = _strdup(name);
+    symbol->type = type;
+    symbol->size = size;
+    symbol->return_type = return_type;
+    symbol->exp_type = exp_type;
+    symbol->ip = ip;
+    symbol->offset_or_size = offset_or_size;
+    symbol->parameter = parameter;
+    symbol->parent = (parent == nullptr ? nullptr : _strdup(parent));
+    symbol->is_temp = is_temp;
+
+    // Add it to the symbol table
+    SymbolTableEntry* tail = symbol_table;
+    if (tail) {
+        while (tail->next) {
+            tail = tail->next;
+        }
+
+        tail->next = symbol;
+    } else {
+        symbol_table = symbol;
+    }
+
+    return symbol;
+}
+
 const char* Compiler::ExpressionTypeToString(ExpressionType type)
 {
     switch (type) {
@@ -1030,15 +1038,15 @@ int32_t Compiler::GetSymbolTypeSize(SymbolType type, bool is_pointer)
     }
 }
 
-int32_t Compiler::GetReturnSymbolTypeSize(ReturnSymbolType type)
+SymbolType Compiler::ReturnSymbolTypeToSymbolType(ReturnSymbolType type)
 {
     switch (type) {
-        case ReturnSymbolType::Bool: return 1;
-        case ReturnSymbolType::Uint8: return 1;
-        case ReturnSymbolType::Uint16: return 2;
-        case ReturnSymbolType::Uint32: return 4;
-
-        case ReturnSymbolType::String: return 2; // 16-bit pointer
+        case ReturnSymbolType::Bool: return SymbolType::Bool;
+        case ReturnSymbolType::Uint8: return SymbolType::Uint8;
+        case ReturnSymbolType::Uint16: return SymbolType::Uint16;
+        case ReturnSymbolType::Uint32: return SymbolType::Uint32;
+        case ReturnSymbolType::String: return SymbolType::String;
+        case ReturnSymbolType::Void: return SymbolType::None;
 
         default: ThrowOnUnreachableCode();
     }

@@ -979,9 +979,9 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
             }
             case InstructionType::Return: {
                 if (ip != ip_src &&
-                    current->return_statement.type == ExpressionType::Variable &&
-                    current->return_statement.value &&
-                    strcmp(var->symbol->name, current->return_statement.value) == 0) {
+                    current->return_statement.op.exp_type == ExpressionType::Variable &&
+                    current->return_statement.op.value &&
+                    strcmp(var->symbol->name, current->return_statement.op.value) == 0) {
 
                     return current;
                 }
@@ -3746,13 +3746,32 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
 {
     was_return = true;
 
+    SymbolType return_type = compiler->ReturnSymbolTypeToSymbolType(parent->return_type);
+
+    bool are_types_compatible = (i->return_statement.op.type == return_type);
+    if (!are_types_compatible) {
+        are_types_compatible = compiler->GetLargestTypeForArithmetic(
+            i->return_statement.op.type, return_type) != SymbolType::Unknown;
+    }
+
+    if (!are_types_compatible) {
+        std::string message = "All returns in function \"";
+        message += parent->name;
+        message += "\" must return \"";
+        message += compiler->ReturnSymbolTypeToString(parent->return_type);
+        message += "\" value, found \"";
+        message += compiler->SymbolTypeToString(i->return_statement.op.type);
+        message += "\" instead";
+        throw CompilerException(CompilerExceptionSource::Statement, message);
+    }
+
     if (parent->type == SymbolType::EntryPoint) {
         // Entry point is handled differently,
         // DOS Function Dispatcher is caled at the end of the function,
         // return value is passed to DOS and the program is terminated
-        switch (i->return_statement.type) {
+        switch (i->return_statement.op.exp_type) {
             case ExpressionType::Constant: {
-                uint8_t imm8 = atoi(i->return_statement.value);
+                uint8_t imm8 = atoi(i->return_statement.op.value);
 
                 uint8_t* a = AllocateBufferForInstruction(6);
                 a[0] = 0xB0;    // mov al, imm8
@@ -3764,7 +3783,7 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
                 break;
             }
             case ExpressionType::Variable: {
-                DosVariableDescriptor* src = FindVariableByName(i->return_statement.value);
+                DosVariableDescriptor* src = FindVariableByName(i->return_statement.op.value);
 
                 if (src->reg == CpuRegister::AX) {
                     // Value is already in place, no need to do anything
@@ -3803,16 +3822,16 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
         // Standard function with "stdcall" calling convention,
         // return value (if any) is saved in AX register
         if (parent->return_type != ReturnSymbolType::Void) {
-            int32_t dst_size = compiler->GetReturnSymbolTypeSize(parent->return_type);
+            int32_t dst_size = compiler->GetSymbolTypeSize(return_type, false);
 
-            switch (i->return_statement.type) {
+            switch (i->return_statement.op.exp_type) {
                 case ExpressionType::Constant: {
-                    int32_t value = atoi(i->return_statement.value);
+                    int32_t value = atoi(i->return_statement.op.value);
                     LoadConstantToRegister(value, CpuRegister::AX, dst_size);
                     break;
                 }
                 case ExpressionType::Variable: {
-                    DosVariableDescriptor* src = FindVariableByName(i->return_statement.value);
+                    DosVariableDescriptor* src = FindVariableByName(i->return_statement.op.value);
                     CopyVariableToRegister(src, CpuRegister::AX, dst_size);
                     break;
                 }

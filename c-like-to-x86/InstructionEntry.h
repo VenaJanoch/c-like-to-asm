@@ -100,8 +100,7 @@ struct InstructionEntry {
         } call_statement;
 
         struct {
-            char* value;
-            ExpressionType type;
+            InstructionOperand op;
         } return_statement;
     };
 

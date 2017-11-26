@@ -27,9 +27,7 @@
      type == SymbolType::String)
 
 #define CheckTypeIsValid(type, loc)                                             \
-    if (type != SymbolType::Uint8  && type != SymbolType::Uint16 &&             \
-        type != SymbolType::Uint32 && type != SymbolType::Bool   &&             \
-        type != SymbolType::String) {                                           \
+    if (!TypeIsValid(type)) {                                                   \
         throw CompilerException(CompilerExceptionSource::Statement,             \
             "Specified type is not allowed", loc.first_line, loc.first_column); \
     }  
@@ -290,7 +288,7 @@ public:
     SymbolTableEntry* GetUnusedVariable(SymbolType type);
 
     int32_t GetSymbolTypeSize(SymbolType type, bool is_pointer);
-    int32_t GetReturnSymbolTypeSize(ReturnSymbolType type);
+    SymbolType ReturnSymbolTypeToSymbolType(ReturnSymbolType type);
 
     void IncreaseScope(ScopeType type);
     void ResetScope(ScopeType type);
@@ -298,12 +296,13 @@ public:
     void BackpatchScope(ScopeType type, int32_t new_ip);
     bool AddToScopeList(ScopeType type, BackpatchList* backpatch);
 
+    const char* SymbolTypeToString(SymbolType type);
+    const char* ReturnSymbolTypeToString(ReturnSymbolType type);
+
 private:
     SymbolTableEntry* AddSymbol(const char* name, SymbolType type, int32_t size, ReturnSymbolType return_type,
         ExpressionType exp_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent, bool is_temp);
 
-    const char* SymbolTypeToString(SymbolType type);
-    const char* ReturnSymbolTypeToString(ReturnSymbolType type);
     const char* ExpressionTypeToString(ExpressionType type);
 
     void ReleaseDeclarationQueue();
