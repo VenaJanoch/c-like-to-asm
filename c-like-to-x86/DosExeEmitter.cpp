@@ -2958,13 +2958,13 @@ void DosExeEmitter::EmitAssignShift(InstructionEntry* i)
             int32_t value = atoi(i->assignment.op2.value);
 
             SaveAndUnloadRegister(CpuRegister::CL);
-            LoadConstantToRegister(value, CpuRegister::CL, dst_size);
+            LoadConstantToRegister(value, CpuRegister::CL, 1);
             // ToDo: Use shl/shr rm8/16/32, imm8
             break;
         }
         case ExpressionType::Variable: {
             DosVariableDescriptor* op2 = FindVariableByName(i->assignment.op2.value);
-            CopyVariableToRegister(op2, CpuRegister::CL, dst_size);
+            CopyVariableToRegister(op2, CpuRegister::CL, 1);
             break;
         }
 
@@ -3015,8 +3015,8 @@ void DosExeEmitter::EmitAssignShift(InstructionEntry* i)
         }
         case 4: {
             uint8_t* a = AllocateBufferForInstruction(3);
-            a[0] = 0xD3;    // Operand size prefix
-            a[1] = 0xF6;    // shl/shr rm32, cl
+            a[0] = 0x66;    // Operand size prefix
+            a[1] = 0xD3;    // shl/shr rm32, cl
             a[2] = ToXrm(3, type, reg_dst);
             break;
         }
