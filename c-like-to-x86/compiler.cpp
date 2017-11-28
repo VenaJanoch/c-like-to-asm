@@ -880,6 +880,20 @@ bool Compiler::CanImplicitCast(SymbolType to, SymbolType from, ExpressionType ty
     return false;
 }
 
+bool Compiler::IsExplicitCastAllowed(SymbolType from, SymbolType to)
+{
+    if (from == SymbolType::Unknown || to == SymbolType::Unknown ||
+        from == SymbolType::None || to == SymbolType::None) {
+        return false;
+    }
+
+    if (from == SymbolType::String && to == SymbolType::String) {
+        return (from == to);
+    }
+
+    return true;
+}
+
 SymbolType Compiler::GetLargestTypeForArithmetic(SymbolType a, SymbolType b)
 {
     if (!TypeIsValid(a) || !TypeIsValid(b))

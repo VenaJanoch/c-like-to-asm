@@ -17,9 +17,11 @@ enum struct InstructionType {
 };
 
 enum struct AssignType {
+    // One operand
     None,
     Negation,
 
+    // Two operands
     Add,
     Subtract,
     Multiply,

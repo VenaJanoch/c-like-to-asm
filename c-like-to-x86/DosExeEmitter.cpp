@@ -912,7 +912,7 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
     while (current && ip <= parent_end_ip) {
         switch (current->type) {
             case InstructionType::Assign: {
-                if (ip != ip_src &&
+                if (/*ip != ip_src &&*/
                     (current->assignment.op1.exp_type == ExpressionType::Variable &&
                      current->assignment.op1.value &&
                      strcmp(var->symbol->name, current->assignment.op1.value) == 0) ||
@@ -925,7 +925,7 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
                 break;
             }
             case InstructionType::If: {
-                if (ip != ip_src &&
+                if (/*ip != ip_src &&*/
                     (current->if_statement.op1.exp_type == ExpressionType::Variable &&
                      current->if_statement.op1.value &&
                      strcmp(var->symbol->name, current->if_statement.op1.value) == 0) ||
@@ -938,7 +938,7 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
                 break;
             }
             case InstructionType::Goto: {
-                if (current->goto_statement.ip < ip) {
+                if (current->goto_statement.ip < ip_src) {
                     // Program wants to jump backwards, it's unpredictible
                     if (var->symbol->is_temp) {
                         // Temp. variables will go out of scope
@@ -3499,6 +3499,10 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
         }
 
         default: ThrowOnUnreachableCode();
+    }
+
+    if (goto_ptr) {
+        return;
     }
 
     uint8_t* a = AllocateBufferForInstruction(1 + 1);

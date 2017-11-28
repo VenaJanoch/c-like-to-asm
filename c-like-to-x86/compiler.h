@@ -277,6 +277,7 @@ public:
 
     bool CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type);
 
+    bool IsExplicitCastAllowed(SymbolType from, SymbolType to);
     SymbolType GetLargestTypeForArithmetic(SymbolType a, SymbolType b);
 
     /// <summary>

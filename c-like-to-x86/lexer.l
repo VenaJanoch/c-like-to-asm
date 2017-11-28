@@ -287,6 +287,12 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
     return GOTO;
 }
 
+"cast" {
+    LogDebug("L: Found \"cast\"");
+
+    return CAST;
+}
+
 "++" {
     LogDebug("L: Found ++");
 

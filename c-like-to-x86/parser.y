@@ -29,7 +29,7 @@ Compiler c;
 //%define parse.trace
 
 %token CONST STATIC VOID BOOL UINT8 UINT16 UINT32 STRING CONSTANT IDENTIFIER
-%token IF ELSE RETURN DO WHILE FOR SWITCH CASE DEFAULT CONTINUE BREAK GOTO
+%token IF ELSE RETURN DO WHILE FOR SWITCH CASE DEFAULT CONTINUE BREAK GOTO CAST
 %token INC_OP DEC_OP U_PLUS U_MINUS  
 %token EQUAL NOT_EQUAL GREATER_OR_EQUAL LESS_OR_EQUAL SHIFT_LEFT SHIFT_RIGHT LOG_AND LOG_OR
 
@@ -1458,6 +1458,23 @@ expression
 
             $$ = $2;
         }
+	| CAST '<' declaration_type '>' '(' expression ')'
+		{
+			LogDebug("P: Processing explicit cast");
+
+			if (!c.IsScopeActive(ScopeType::Assign)) {
+				throw CompilerException(CompilerExceptionSource::Statement,
+                    "Explicit cast cannot be used in this context", @1.first_line, @1.first_column);
+			}
+
+			if (!c.IsExplicitCastAllowed($6.type, $3)) {
+				throw CompilerException(CompilerExceptionSource::Statement,
+                    "This explicit cast type cannot be used in this context", @1.first_line, @1.first_column);
+			}
+
+			$$ = $6;
+			$$.type = $3;
+		}
     | id '(' call_parameter_list ')'
         {
             LogDebug("P: Processing function call with parameters");
