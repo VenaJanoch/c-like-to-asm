@@ -240,7 +240,7 @@ public:
     Compiler();
     ~Compiler();
 
-    int OnRun(int argc, wchar_t *argv[]);
+    int OnRun(int argc, wchar_t* argv[]);
 
 #if _DEBUG
     void CreateDebugOutput();
@@ -276,8 +276,7 @@ public:
     SymbolTableEntry* FindSymbolByName(const char* name);
 
     bool CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type);
-
-    bool IsExplicitCastAllowed(SymbolType from, SymbolType to);
+    bool CanExplicitCast(SymbolType to, SymbolType from);
     SymbolType GetLargestTypeForArithmetic(SymbolType a, SymbolType b);
 
     /// <summary>

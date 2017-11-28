@@ -42,8 +42,10 @@ enum struct ExpressionType {
 
     Constant,
     Variable,
+    VariablePointer
 };
 
+// ToDo: Remove "offset_or_size" variable
 struct SymbolTableEntry {
     char* name;
     SymbolType type;

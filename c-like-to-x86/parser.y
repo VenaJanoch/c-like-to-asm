@@ -761,13 +761,23 @@ assignment
                     message, @1.first_line, @1.first_column);
             }
 
-            if (!c.CanImplicitCast(decl->type, $4.type, $4.exp_type)) {
-                std::string message = "Cannot assign to variable \"";
-                message += $1;
-                message += "\" because of type mismatch";
-                throw CompilerException(CompilerExceptionSource::Statement,
-                    message, @1.first_line, @1.first_column);
-            }
+			if (decl->size == IsPointer) {
+				if ($4.exp_type != ExpressionType::Constant && $4.exp_type != ExpressionType::VariablePointer) {
+					std::string message = "Cannot assign \"";
+					message += $4.value;
+					message += "\" to pointer";
+					throw CompilerException(CompilerExceptionSource::Statement,
+						message, @1.first_line, @1.first_column);
+				}
+			} else {
+			    if (!c.CanImplicitCast(decl->type, $4.type, $4.exp_type)) {
+					std::string message = "Cannot assign to variable \"";
+					message += $1;
+					message += "\" because of type mismatch";
+					throw CompilerException(CompilerExceptionSource::Statement,
+						message, @1.first_line, @1.first_column);
+				}
+			}
 
 			PreAssign($4);
 
@@ -785,7 +795,7 @@ assignment
 
 			$$.value = $1;
             $$.type = decl->type;
-            $$.exp_type = ExpressionType::Variable;
+            $$.exp_type = (decl->size == IsPointer ? ExpressionType::VariablePointer : ExpressionType::Variable);
 			$$.index.value = nullptr;
 
 			PostAssign($$, $4);
@@ -937,6 +947,41 @@ assignment_with_declaration
 			$$.index.value = nullptr;
 
 			PostAssign($$, $5);
+        }
+	| declaration_type '*' id '=' assign_marker assignment
+        {
+            LogDebug("P: Found pointer variable declaration with assignment \"" << $3 << "\"");
+
+			if ($6.exp_type != ExpressionType::Constant && $6.exp_type != ExpressionType::VariablePointer) {
+				std::string message = "Cannot assign \"";
+				message += $6.value;
+				message += "\" to pointer";
+				throw CompilerException(CompilerExceptionSource::Statement,
+					message, @1.first_line, @1.first_column);
+			}
+
+			PreAssign($6);
+
+			SymbolTableEntry* decl = c.ToDeclarationList($1, IsPointer, $3, ExpressionType::None);
+
+			if ($6.index.value) {
+				sprintf_s(output_buffer, "%s = %s[%s]", $3, $6.value, $6.index.value);
+			} else {
+				sprintf_s(output_buffer, "%s = %s", $3, $6.value);
+			}
+            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+            i->assignment.type = AssignType::None;
+            i->assignment.dst_value = decl->name;
+            CopyOperand(i->assignment.op1, $6);
+
+			//$$.true_list = $6.true_list;
+
+			$$.value = $3;
+            $$.type = $1;
+            $$.exp_type = ExpressionType::VariablePointer;
+			$$.index.value = nullptr;
+
+			PostAssign($$, $6);
         }
     ;
 
@@ -1266,17 +1311,40 @@ expression
             } else {
                 LogDebug("P: Processing addition");
 
-                SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
-                if (type == SymbolType::Unknown) {
-                    throw CompilerException(CompilerExceptionSource::Statement,
-                        "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
-                }
+				SymbolType type;
+				bool is_pointer;
+				if ($1.exp_type == ExpressionType::VariablePointer || $3.exp_type == ExpressionType::VariablePointer) {
+					// Pointer arithmetic
+					if ($1.exp_type == $3.exp_type) {
+						// ToDo
+						ThrowOnUnreachableCode();
+					}
+
+					if ($1.exp_type == ExpressionType::VariablePointer) {
+						type = $1.type;
+					} else {
+						type = $3.type;
+					}
+					is_pointer = true;
+				} else {
+					// Standard arithmetic
+					SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
+					if (type == SymbolType::Unknown) {
+						throw CompilerException(CompilerExceptionSource::Statement,
+							"Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
+					}
+
+					is_pointer = false;
+				}
 
 				// Move indexed variables to temp. variables
 				PrepareIndexedVariableIfNeeded($1);
 				PrepareIndexedVariableIfNeeded($3);
 
                 SymbolTableEntry* decl = c.GetUnusedVariable(type);
+				if (is_pointer) {
+					decl->size = IsPointer;
+				}
 
                 sprintf_s(output_buffer, "%s = %s + %s", decl->name, $1.value, $3.value);
                 InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
@@ -1284,7 +1352,7 @@ expression
 
                 $$.value = decl->name;
                 $$.type = type;
-                $$.exp_type = ExpressionType::Variable;
+                $$.exp_type = (is_pointer ? ExpressionType::VariablePointer : ExpressionType::Variable);
 				$$.index.value = nullptr;
                 $$.true_list = nullptr;
                 $$.false_list = nullptr;
@@ -1294,17 +1362,40 @@ expression
         {
             LogDebug("P: Processing substraction");
 
-            SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
-            if (type == SymbolType::Unknown) {
-                throw CompilerException(CompilerExceptionSource::Statement,
-                    "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
-            }
+			SymbolType type;
+			bool is_pointer;
+			if ($1.exp_type == ExpressionType::VariablePointer || $3.exp_type == ExpressionType::VariablePointer) {
+				// Pointer arithmetic
+				if ($1.exp_type == $3.exp_type) {
+					// ToDo
+					ThrowOnUnreachableCode();
+				}
+
+				if ($1.exp_type == ExpressionType::VariablePointer) {
+					type = $1.type;
+				} else {
+					type = $3.type;
+				}
+				is_pointer = true;
+			} else {
+				// Standard arithmetic
+				SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
+				if (type == SymbolType::Unknown) {
+					throw CompilerException(CompilerExceptionSource::Statement,
+						"Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
+				}
+
+				is_pointer = false;
+			}
 
 			// Move indexed variables to temp. variables
 			PrepareIndexedVariableIfNeeded($1);
 			PrepareIndexedVariableIfNeeded($3);
 
             SymbolTableEntry* decl = c.GetUnusedVariable(type);
+			if (is_pointer) {
+				decl->size = IsPointer;
+			}
 
             sprintf_s(output_buffer, "%s = %s - %s", decl->name, $1.value, $3.value);
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
@@ -1312,7 +1403,7 @@ expression
 
             $$.value = decl->name;
             $$.type = type;
-            $$.exp_type = ExpressionType::Variable;
+            $$.exp_type = (is_pointer ? ExpressionType::VariablePointer : ExpressionType::Variable);
 			$$.index.value = nullptr;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
@@ -1467,7 +1558,7 @@ expression
                     "Explicit cast cannot be used in this context", @1.first_line, @1.first_column);
 			}
 
-			if (!c.IsExplicitCastAllowed($6.type, $3)) {
+			if (!c.CanExplicitCast($3, $6.type)) {
 				throw CompilerException(CompilerExceptionSource::Statement,
                     "This explicit cast type cannot be used in this context", @1.first_line, @1.first_column);
 			}
@@ -1602,7 +1693,7 @@ expression
 
             $$.value = $1;
             $$.type = param->type;
-            $$.exp_type = ExpressionType::Variable;
+            $$.exp_type = (param->size != 0 ? ExpressionType::VariablePointer : ExpressionType::Variable);
 			$$.index.value = nullptr;
         }
     ;

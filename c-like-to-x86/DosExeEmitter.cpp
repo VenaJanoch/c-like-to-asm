@@ -40,7 +40,7 @@ void DosExeEmitter::EmitMzHeader()
     // Write valid signature
     header->signature[0] = 'M';
     header->signature[1] = 'Z';
-    header->header_paragraphs = (header_size >> 4) + 1;
+    header->header_paragraphs = ((header_size + 16 - 1) >> 4);
 
     // Fill the remaining space, so instructions are aligned
     int32_t remaining = (header->header_paragraphs << 4) - header_size;
@@ -1419,6 +1419,36 @@ CpuRegister DosExeEmitter::LoadVariableUnreferenced(DosVariableDescriptor* var, 
     return reg_dst;
 }
 
+CpuRegister DosExeEmitter::LoadVariablePointer(DosVariableDescriptor* var)
+{
+    if (var->symbol->size == 0) {
+        // Standard variables cannot be referenced for now...
+        ThrowOnUnreachableCode();
+    }
+
+    CpuRegister reg_dst = GetUnusedRegister();
+
+    // Hardcoded 16-bit pointer size
+    if (var->symbol->size == IsPointer) { // It's already pointer
+        return LoadVariableUnreferenced(var, 2);
+    }
+    
+    if (var->symbol->parent) { // Local (stack)
+        uint8_t* a = AllocateBufferForInstruction(2 + 1);
+        a[0] = 0x8D;    // lea r16, m
+        a[1] = ToXrm(1, reg_dst, 6);
+
+        BackpatchLocal(a + 2, var);
+    } else { // Static
+        uint8_t* a = AllocateBufferForInstruction(1 + 2);
+        a[0] = ToOpR(0xB8, reg_dst);    // mov r16, imm16
+
+        BackpatchStatic(a + 1, var);
+    }
+
+    return reg_dst;
+}
+
 CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size)
 {
     if (var->symbol->size == 0) {
@@ -1451,13 +1481,43 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
         default: ThrowOnUnreachableCode();
     }
 
+    if (var->symbol->size == IsPointer) {
+        if (var->reg != CpuRegister::None) {
+            // Pointer is already loaded in register
+            uint8_t* a = AllocateBufferForInstruction(2);
+            a[0] = 0x03;    // add r16, rm16
+            a[1] = ToXrm(3, CpuRegister::SI, var->reg);
+        } else if (!var->symbol->parent) {
+            // Pointer is in static (16-bit range)
+            uint8_t* a = AllocateBufferForInstruction(2 + 2);
+            a[0] = 0x03;   // add r16, rm16
+            a[1] = ToXrm(2, CpuRegister::SI, 4);
+
+            BackpatchStatic(a + 2, var);
+        } else {
+            // Pointer is in stack (8-bit range)
+            uint8_t* a = AllocateBufferForInstruction(2 + 1);
+            a[0] = 0x03;   // add r16, rm16
+            a[1] = ToXrm(1, CpuRegister::SI, 2);
+
+            BackpatchLocal(a + 2, var);
+        }
+    }
+
     CpuRegister reg_dst = GetUnusedRegister();
 
     switch (var_size) {
         case 1: {
             if (desired_size == 4) {
-                if (!var->symbol->parent) {
-                    // Static push (16-bit range)
+                if (var->symbol->size == IsPointer) {
+                    // Pointer to register (16-bit)
+                    uint8_t* a = AllocateBufferForInstruction(4);
+                    a[0] = 0x66;    // Operand size prefix
+                    a[1] = 0x0F;
+                    a[2] = 0xB6;    // movzx r16, rm8 (i386+)
+                    a[3] = ToXrm(0, reg_dst, 4);
+                } else if (!var->symbol->parent) {
+                    // Static to register (16-bit range)
                     uint8_t* a = AllocateBufferForInstruction(4 + 2);
                     a[0] = 0x66;    // Operand size prefix
                     a[1] = 0x0F;
@@ -1466,7 +1526,7 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
 
                     BackpatchStatic(a + 4, var);
                 } else {
-                    // Stack to register copy (8-bit range)
+                    // Stack to register (8-bit range)
                     uint8_t* a = AllocateBufferForInstruction(4 + 1);
                     a[0] = 0x66;    // Operand size prefix
                     a[1] = 0x0F;
@@ -1476,8 +1536,14 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
                     BackpatchLocal(a + 4, var);
                 }
             } else if (desired_size == 2) {
-                if (!var->symbol->parent) {
-                    // Static push (16-bit range)
+                if (var->symbol->size == IsPointer) {
+                    // Pointer to register (16-bit)
+                    uint8_t* a = AllocateBufferForInstruction(3);
+                    a[0] = 0x0F;
+                    a[1] = 0xB6;    // movzx r16, rm8 (i386+)
+                    a[2] = ToXrm(0, reg_dst, 4);
+                } else if (!var->symbol->parent) {
+                    // Static to register (16-bit range)
                     uint8_t* a = AllocateBufferForInstruction(3 + 2);
                     a[0] = 0x0F;
                     a[1] = 0xB6;    // movzx r16, rm8 (i386+)
@@ -1485,7 +1551,7 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
 
                     BackpatchStatic(a + 3, var);
                 } else {
-                    // Stack to register copy (8-bit range)
+                    // Stack to register (8-bit range)
                     uint8_t* a = AllocateBufferForInstruction(3 + 1);
                     a[0] = 0x0F;
                     a[1] = 0xB6;    // movzx r16, rm8 (i386+)
@@ -1494,15 +1560,20 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
                     BackpatchLocal(a + 3, var);
                 }
             } else {
-                if (!var->symbol->parent) {
-                    // Static push (16-bit range)
+                if (var->symbol->size == IsPointer) {
+                    // Pointer to register (16-bit)
+                    uint8_t* a = AllocateBufferForInstruction(2);
+                    a[0] = 0x8A;   // mov r8, rm8
+                    a[1] = ToXrm(0, reg_dst, 4);
+                } else if (!var->symbol->parent) {
+                    // Static to register (16-bit range)
                     uint8_t* a = AllocateBufferForInstruction(2 + 2);
                     a[0] = 0x8A;   // mov r8, rm8
                     a[1] = ToXrm(2, reg_dst, 4);
 
                     BackpatchStatic(a + 2, var);
                 } else {
-                    // Stack to register copy (8-bit range)
+                    // Stack to register (8-bit range)
                     uint8_t* a = AllocateBufferForInstruction(2 + 1);
                     a[0] = 0x8A;   // mov r8, rm8
                     a[1] = ToXrm(1, reg_dst, 2);
@@ -1514,8 +1585,14 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
         }
         case 2: {
             if (desired_size == 4) {
-                if (!var->symbol->parent) {
-                    // Static push (16-bit range)
+                if (var->symbol->size == IsPointer) {
+                    // Pointer to register (16-bit)
+                    uint8_t* a = AllocateBufferForInstruction(3);
+                    a[0] = 0x0F;
+                    a[1] = 0xB7;    // movzx r32, rm16 (i386+)
+                    a[2] = ToXrm(0, reg_dst, 4);
+                } else if (!var->symbol->parent) {
+                    // Static to register (16-bit range)
                     uint8_t* a = AllocateBufferForInstruction(3 + 2);
                     a[0] = 0x0F;
                     a[1] = 0xB7;    // movzx r32, rm16 (i386+)
@@ -1523,7 +1600,7 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
 
                     BackpatchStatic(a + 3, var);
                 } else {
-                    // Stack to register copy (8-bit range)
+                    // Stack to register (8-bit range)
                     uint8_t* a = AllocateBufferForInstruction(3 + 1);
                     a[0] = 0x0F;
                     a[1] = 0xB7;    // movzx r32, rm16 (i386+)
@@ -1532,15 +1609,20 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
                     BackpatchLocal(a + 3, var);
                 }
             } else {
-                if (!var->symbol->parent) {
-                    // Static push (16-bit range)
+                if (var->symbol->size == IsPointer) {
+                    // Pointer to register (16-bit)
+                    uint8_t* a = AllocateBufferForInstruction(2);
+                    a[0] = 0x8B;   // mov r16, rm16
+                    a[1] = ToXrm(0, reg_dst, 4);
+                } else if (!var->symbol->parent) {
+                    // Static to register (16-bit range)
                     uint8_t* a = AllocateBufferForInstruction(2 + 2);
                     a[0] = 0x8B;   // mov r16, rm16
                     a[1] = ToXrm(2, reg_dst, 4);
 
                     BackpatchStatic(a + 2, var);
                 } else {
-                    // Stack to register copy (8-bit range)
+                    // Stack to register (8-bit range)
                     uint8_t* a = AllocateBufferForInstruction(2 + 1);
                     a[0] = 0x8B;   // mov r16, rm16
                     a[1] = ToXrm(1, reg_dst, 2);
@@ -1551,8 +1633,14 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
             break;
         }
         case 4: {
-            if (!var->symbol->parent) {
-                // Static push (16-bit range)
+            if (var->symbol->size == IsPointer) {
+                // Pointer to register (16-bit)
+                uint8_t* a = AllocateBufferForInstruction(3);
+                a[0] = 0x66;   // Operand size prefix
+                a[1] = 0x8B;   // mov r32, rm32
+                a[2] = ToXrm(0, reg_dst, 4);
+            } else if (!var->symbol->parent) {
+                // Static to register (16-bit range)
                 uint8_t* a = AllocateBufferForInstruction(3 + 2);
                 a[0] = 0x66;   // Operand size prefix
                 a[1] = 0x8B;   // mov r32, rm32
@@ -2148,6 +2236,11 @@ void DosExeEmitter::EmitFunctionEpilogue()
         ThrowOnUnreachableCode();
     }
 
+    if (stack_var_size >= INT8_MAX) {
+        throw CompilerException(CompilerExceptionSource::Compilation,
+            "Compiler cannot generate that high address offset");
+    }
+
     *(uint16_t*)(buffer + parent_stack_offset) = stack_var_size;
 
     CheckBackpatchListIsEmpty(DosBackpatchTarget::Local);
@@ -2268,7 +2361,14 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
             } else if (i->assignment.op1.index.value) {
                 dst->reg = LoadIndexedVariable(op1, i->assignment.op1.index, dst_size);
             } else {
-                dst->reg = LoadVariableUnreferenced(op1, dst_size);
+                if (dst->symbol->size == IsPointer && op1->symbol->size > 0) {
+                    // Array reference is assigned to pointer
+                    //dst->reg = LoadVariablePointer(op1);
+                    // ToDo
+                    ThrowOnUnreachableCode();
+                } else {
+                    dst->reg = LoadVariableUnreferenced(op1, dst_size);
+                }
             }
 
             if (i->assignment.dst_index.value) {
@@ -2279,6 +2379,13 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
                 dst->is_dirty = true;
                 dst->last_used = ip_src;
             }
+            break;
+        }
+        case ExpressionType::VariablePointer: {
+            DosVariableDescriptor* op1 = FindVariableByName(i->assignment.op1.value);
+            dst->reg = LoadVariablePointer(op1);
+            dst->is_dirty = true;
+            dst->last_used = ip_src;
             break;
         }
 

@@ -8,11 +8,6 @@
     __debugbreak();                 \
     throw CompilerException(CompilerExceptionSource::Compilation, "Unexpected compiler error");
 
-#define ThrowOnTooFarCall()         \
-    __debugbreak();                 \
-    throw CompilerException(CompilerExceptionSource::Compilation, "Compiler cannot generate that high address offset");
-
-
 enum struct CompilerExceptionSource {
     Unknown,
 

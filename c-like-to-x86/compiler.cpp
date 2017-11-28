@@ -209,7 +209,7 @@ void Compiler::CreateDebugOutput()
 
         while (current) {
             fprintf(output_debug,
-                "%-15s %-12s %-9s %-5lu %-6lu %-12lu %-7lu %-6s %-3s %s\r\n",
+                "%-15s %-12s %-9s %-5li %-6lu %-12lu %-7lu %-6s %-3s %s\r\n",
                 current->name,
                 SymbolTypeToString(current->type),
                 ReturnSymbolTypeToString(current->return_type),
@@ -851,6 +851,11 @@ SymbolTableEntry* Compiler::FindSymbolByName(const char* name)
 
 bool Compiler::CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type)
 {
+    if (type == ExpressionType::VariablePointer) {
+        // Pointers are not allowed here
+        ThrowOnUnreachableCode();
+    }
+
     if (from == to) {
         return true;
     }
@@ -880,15 +885,19 @@ bool Compiler::CanImplicitCast(SymbolType to, SymbolType from, ExpressionType ty
     return false;
 }
 
-bool Compiler::IsExplicitCastAllowed(SymbolType from, SymbolType to)
+bool Compiler::CanExplicitCast(SymbolType to, SymbolType from)
 {
+    if (from == to) {
+        return true;
+    }
+
     if (from == SymbolType::Unknown || to == SymbolType::Unknown ||
         from == SymbolType::None || to == SymbolType::None) {
         return false;
     }
 
-    if (from == SymbolType::String && to == SymbolType::String) {
-        return (from == to);
+    if (from == SymbolType::String || to == SymbolType::String) {
+        return false;
     }
 
     return true;

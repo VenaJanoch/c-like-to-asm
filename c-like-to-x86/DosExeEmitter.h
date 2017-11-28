@@ -253,6 +253,8 @@ private:
     /// <returns>Target register</returns>
     CpuRegister LoadVariableUnreferenced(DosVariableDescriptor* var, int32_t desired_size);
 
+    CpuRegister LoadVariablePointer(DosVariableDescriptor* var);
+
     CpuRegister LoadIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size);
 
     /// <summary>
