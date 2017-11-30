@@ -2,6 +2,9 @@
 %option yylineno
 %option case-insensitive
 %option nostdinit
+%option stack
+
+%x STATE_STRING
 
 %{
 #include <stdio.h>
@@ -21,6 +24,9 @@
 int yycolumn = 1;
 bool allow_unary = false;
 
+char string_buffer[32768];
+char* string_buffer_ptr;
+
 extern Compiler c;
 
 %}
@@ -36,7 +42,6 @@ DIRECTIVE ("#".*{NEWLINE})
 INTEGER (0|[1-9][0-9]*)
 BOOL_TRUE true
 BOOL_FALSE false
-STRING (\"[^\"]*\")
 IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 %%
@@ -392,26 +397,73 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
     return CONSTANT;
 }
 
-{STRING} {
-    LogDebug("L: Found string constant \"" << yytext << "\"");
-
-    char* value = new char[yyleng - 1];
-    memcpy(value, yytext + 1, yyleng - 2);
-    value[yyleng - 2] = '\0';
-
-    yylval.expression.value = value;
-    yylval.expression.exp_type = ExpressionType::Constant;
-    yylval.expression.type = SymbolType::String;
-    allow_unary = false;
-    return CONSTANT;
-}
-
 {IDENTIFIER} {
     LogDebug("L: Found identifier \"" << yytext << "\"");
 
     yylval.string = _strdup(yytext);
     allow_unary = false;
     return IDENTIFIER;
+}
+
+\" {
+	string_buffer_ptr = string_buffer;
+	BEGIN(STATE_STRING);
+}
+
+<STATE_STRING>{
+	\" {
+		BEGIN(INITIAL);
+		*string_buffer_ptr = '\0';
+
+		LogDebug("L: Found string constant \"" << string_buffer << "\"");
+
+		yylval.expression.value = _strdup(string_buffer);
+		yylval.expression.exp_type = ExpressionType::Constant;
+		yylval.expression.type = SymbolType::String;
+		allow_unary = false;
+
+		return CONSTANT;
+	}
+
+	\n {
+		throw CompilerException(CompilerExceptionSource::Syntax,
+            "String is not terminated at the end of the line", yylloc.first_line, yylloc.first_column);
+	}
+
+	\\[0-7]{1,3} {
+		// Octal escape sequence
+		int32_t result;
+		sscanf_s(yytext + 1, "%o", &result);
+
+		if (result > 0xff) {
+			throw CompilerException(CompilerExceptionSource::Syntax,
+				"String escape sequence is out of bounds", yylloc.first_line, yylloc.first_column);
+		}
+
+		*string_buffer_ptr = result;
+		string_buffer_ptr++;
+	}
+
+	\\[0-9]+ {
+		throw CompilerException(CompilerExceptionSource::Syntax,
+			"String escape sequence is not in octal format", yylloc.first_line, yylloc.first_column);
+	}
+
+	\\n  { *(string_buffer_ptr++) = '\n'; }
+	\\t  { *(string_buffer_ptr++) = '\t'; }
+	\\r  { *(string_buffer_ptr++) = '\r'; }
+	\\b  { *(string_buffer_ptr++) = '\b'; }
+	\\f  { *(string_buffer_ptr++) = '\f'; }
+
+	\\(.|\n)  { *(string_buffer_ptr++) = yytext[1]; }
+
+	[^\\\n\"]+ {
+		// Everything but '\', '"' and new-line
+        char* ptr = yytext;
+        while (*ptr) {
+			*(string_buffer_ptr++) = *(ptr++);
+		}
+    }
 }
 
 %%
