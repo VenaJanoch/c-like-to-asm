@@ -63,30 +63,30 @@ void DosExeEmitter::EmitInstructions(InstructionEntry* instruction_stream)
     // Find IPs that are targets for "goto" statements,
     // at these places, compiler must unload all veriables from registers
     std::unordered_set<uint32_t> discontinuous_ips;
+    {
+        InstructionEntry* current = instruction_stream;
+        while (current) {
+            if (current->type == InstructionType::Goto) {
+                discontinuous_ips.insert(current->goto_statement.ip);
+            } else if (current->type == InstructionType::If) {
+                discontinuous_ips.insert(current->if_statement.ip);
+            }
 
-    InstructionEntry* current = instruction_stream;
-    while (current) {
-        if (current->type == InstructionType::Goto) {
-            discontinuous_ips.insert(current->goto_statement.ip);
-        } else if (current->type == InstructionType::If) {
-            discontinuous_ips.insert(current->if_statement.ip);
+            current = current->next;
         }
-
-        current = current->next;
     }
 
     std::stack<InstructionEntry*> call_parameters;
 
-    current = instruction_stream;
+    current_instruction = instruction_stream;
 
-    if (current->type == InstructionType::Goto) {
+    if (current_instruction && current_instruction->type == InstructionType::Goto) {
         // Skip first "goto" instruction
-        current = current->next;
+        current_instruction = current_instruction->next;
         ip_src++;
     }
 
-    while (current) {
-        current_instruction = current;
+    while (current_instruction) {
 
         // Unload all registers before "goto" statement target, so we can
         // jump to it without any issues
@@ -100,23 +100,29 @@ void DosExeEmitter::EmitInstructions(InstructionEntry* instruction_stream)
         // These methods are called before every abstract instruction
         ProcessSymbolLinkage(symbol_table);
 
+        if (!current_instruction) {
+            // Current instruction can be changed by ProcessSymbolLinkage
+            break;
+        }
+
         BackpatchAddresses();
 
         was_return = false;
 
-        switch (current->type) {
-            case InstructionType::Assign:     EmitAssign(current);                  break;
-            case InstructionType::Goto:       EmitGoto(current);                    break;
-            case InstructionType::GotoLabel:  EmitGotoLabel(current);               break;
-            case InstructionType::If:         EmitIf(current);                      break;
-            case InstructionType::Push:       EmitPush(current, call_parameters);   break;
-            case InstructionType::Call:       EmitCall(current, symbol_table, call_parameters); break;
-            case InstructionType::Return:     EmitReturn(current, symbol_table);    break;
+        switch (current_instruction->type) {
+            case InstructionType::Nop:        break;
+            case InstructionType::Assign:     EmitAssign(current_instruction);                  break;
+            case InstructionType::Goto:       EmitGoto(current_instruction);                    break;
+            case InstructionType::GotoLabel:  EmitGotoLabel(current_instruction);               break;
+            case InstructionType::If:         EmitIf(current_instruction);                      break;
+            case InstructionType::Push:       EmitPush(current_instruction, call_parameters);   break;
+            case InstructionType::Call:       EmitCall(current_instruction, symbol_table, call_parameters); break;
+            case InstructionType::Return:     EmitReturn(current_instruction, symbol_table);    break;
 
             default: ThrowOnUnreachableCode();
         }
 
-        current = current->next;
+        current_instruction = current_instruction->next;
         ip_src++;
     }
 
@@ -2073,6 +2079,7 @@ void DosExeEmitter::CheckReturnStatementPresent()
 
 void DosExeEmitter::ProcessSymbolLinkage(SymbolTableEntry* symbol_table)
 {
+Retry:
     // Check if any symbol is linked with current IP and do corresponding action
     SymbolTableEntry* symbol = symbol_table;
 
@@ -2092,6 +2099,38 @@ void DosExeEmitter::ProcessSymbolLinkage(SymbolTableEntry* symbol_table)
             } else if (symbol->type == SymbolType::Function) {
                 // Start of standard function
                 EmitFunctionEpilogue();
+
+                if (symbol->ref_count == 0) {
+                    // Function is not referenced, it will be optimized out
+                    Log::PopIndent();
+                    Log::Write(LogType::Info, "Function \"%s\" was optimized out", symbol->name);
+                    Log::PushIndent();
+
+                    // Find the beginning of the next function to skip unused lines
+                    current_instruction = current_instruction->next;
+                    ip_src++;
+
+                    while (current_instruction) {
+                        symbol = symbol_table;
+                        while (symbol) {
+                            if (symbol->ip == ip_src &&
+                                (symbol->type == SymbolType::Function || symbol->type == SymbolType::EntryPoint)) {
+                                goto CanContinue;
+                            }
+
+                            symbol = symbol->next;
+                        }
+
+                        current_instruction = current_instruction->next;
+                        ip_src++;
+                    }
+
+                CanContinue:
+                    // Adjust "ip_src_to_dst" mapping, because of unloaded registers
+                    ip_src_to_dst[ip_src] = ip_dst;
+
+                    goto Retry;
+                }
 
                 EmitFunctionPrologue(symbol, symbol_table);
 
@@ -2223,7 +2262,7 @@ void DosExeEmitter::EmitFunctionEpilogue()
                     size *= it->symbol->size;
                 }
 
-                if (it->ref_count == 0) {
+                if (it->symbol->ref_count == 0) {
                     stack_saved_size += size;
                 } else {
                     stack_var_size += size;
@@ -2255,6 +2294,8 @@ void DosExeEmitter::EmitFunctionEpilogue()
 
     // Labels are function-local too, so they must be resolved at this point
     CheckBackpatchListIsEmpty(DosBackpatchTarget::Label);
+
+    parent = nullptr;
 }
 
 void DosExeEmitter::EmitAssign(InstructionEntry* i)
@@ -4026,7 +4067,7 @@ void DosExeEmitter::EmitSharedFunction(char* name, std::function<void()> emitter
 
     while (symbol) {
         if (symbol->type == SymbolType::SharedFunction && strcmp(symbol->name, name) == 0) {
-            if (symbol->ip > 0) {
+            if (symbol->ref_count > 0) {
                 Log::Write(LogType::Info, "Emitting \"%s\"...", name);
 
                 // Function is referenced

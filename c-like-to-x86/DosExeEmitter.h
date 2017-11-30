@@ -85,7 +85,6 @@ struct DosVariableDescriptor {
     int32_t location;
 
     uint32_t last_used;
-    uint32_t ref_count;
 
     bool is_dirty;
 };
@@ -136,7 +135,7 @@ struct MzRelocEntry {
                 DosBackpatchType::ToStack8, DosBackpatchTarget::Local,  \
                 (uint32_t)((ptr) - buffer), 0, 0, (var)->symbol->name   \
             });                                                     \
-            (var)->ref_count++;                                     \
+            (var)->symbol->ref_count++;                             \
         } else {                                                    \
             *(ptr) = (int8_t)(var)->location;                       \
         }                                                           \

@@ -107,9 +107,10 @@ int Compiler::OnRun(int argc, wchar_t* argv[])
 
         input_done = true;
 
-        SortSymbolTable();
-
         Log::PopIndent();
+
+        PostprocessSymbolTable();
+
         Log::Write(LogType::Info, "Creating executable file...");
         Log::PushIndent();
 
@@ -200,21 +201,22 @@ void Compiler::CreateDebugOutput()
     // Generate symbol table
     {
         fprintf(output_debug, "Symbols\r\n"
-            "___________________________________________________________________________________________\r\n"
+            "_____________________________________________________________________________________________________\r\n"
             ""
-            "Name            Type         Return    Size  IP     Offset/Size  Param.  Exp. Type  Parent\r\n"
-            "___________________________________________________________________________________________\r\n");
+            "Name            Type         Return    Size  IP     Ref  Offset/Size  Param.  Exp. Type  Parent\r\n"
+            "_____________________________________________________________________________________________________\r\n");
             
         SymbolTableEntry* current = symbol_table;
 
         while (current) {
             fprintf(output_debug,
-                "%-15s %-12s %-9s %-5li %-6lu %-12lu %-7lu %-6s %-3s %s\r\n",
+                "%-15s %-12s %-9s %-5li %-6lu %-4lu %-12lu %-7lu %-6s %-3s %s\r\n",
                 current->name,
                 SymbolTypeToString(current->type),
                 ReturnSymbolTypeToString(current->return_type),
                 current->size,
                 current->ip,
+                current->ref_count,
                 current->offset_or_size,
                 current->parameter,
                 ExpressionTypeToString(current->exp_type),
@@ -228,7 +230,7 @@ void Compiler::CreateDebugOutput()
     // Generate sequential code
     {
         fprintf(output_debug, "\r\n\r\nStream\r\n"
-            "___________________________________________________________________________________________\r\n\r\n");
+            "_____________________________________________________________________________________________________\r\n\r\n");
 
         SymbolTableEntry* parent = nullptr;
         InstructionEntry* current = instruction_stream_head;
@@ -731,11 +733,6 @@ void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameter
         throw CompilerException(CompilerExceptionSource::Statement, message, yylineno, -1);
     }
 
-    if (current->type == SymbolType::SharedFunction) {
-        // IP of shared function means reference count
-        current->ip++;
-    }
-
     current = symbol_table;
     int32_t parameters_found = 0;
 
@@ -762,7 +759,8 @@ void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameter
         }
         
         // ToDo: Correct ExpressionType
-        if (!CanImplicitCast(current->type, call_parameters->type, call_parameters->exp_type)) {
+        if (call_parameters->exp_type == ExpressionType::VariablePointer ||
+            !CanImplicitCast(current->type, call_parameters->type, call_parameters->exp_type) ) {
             std::string message = "Cannot call function \"";
             message += name;
             message += "\" because of parameter \"";
@@ -847,6 +845,23 @@ SymbolTableEntry* Compiler::FindSymbolByName(const char* name)
     }
 
     return current;
+}
+
+InstructionEntry* Compiler::FindInstructionByIp(int32_t ip)
+{
+    InstructionEntry* current = instruction_stream_head;
+    int32_t ip_current = 0;
+
+    while (current) {
+        if (ip_current == ip) {
+            return current;
+        }
+
+        current = current->next;
+        ip_current++;
+    }
+
+    return nullptr;
 }
 
 bool Compiler::CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type)
@@ -1216,13 +1231,13 @@ void Compiler::ReleaseAll()
     }
 }
 
-void Compiler::SortSymbolTable()
+void Compiler::PostprocessSymbolTable()
 {
     if (!symbol_table) {
         return;
     }
 
-    Log::Write(LogType::Info, "Sorting symbol table...");
+    Log::Write(LogType::Info, "Post-processing the symbol table...");
 
     // Fix IP of first function
     SymbolTableEntry* symbol = symbol_table;
@@ -1240,60 +1255,66 @@ void Compiler::SortSymbolTable()
         symbol = symbol->next;
     }
 
-    // Find last entry of the symbol table
-    SymbolTableEntry* end = symbol_table;
-    while (end->next) {
-        end = end->next;
-    }
-
-    // Move all static variables to the end of the symbol table
-    SymbolTableEntry* prev = nullptr;
-    SymbolTableEntry* static_start = nullptr;
-    SymbolTableEntry* current = symbol_table;
-    while (current && current != static_start) {
-        if (!current->parent &&
-            current->type != SymbolType::Function &&
-            current->type != SymbolType::FunctionPrototype &&
-            current->type != SymbolType::EntryPoint &&
-            current->type != SymbolType::SharedFunction) {
-
-            if (prev) {
-                prev->next = current->next;
-            } else {
-                symbol_table = current->next;
-            }
-
-            SymbolTableEntry* next = current->next;
-
-            end->next = current;
-            current->next = nullptr;
-
-            if (!static_start) {
-                static_start = current;
-            }
-
-            end = current;
-            current = next;
-        } else {
-            prev = current;
-            current = current->next;
+    // Find entry point and create dependency graph
+    symbol = symbol_table;
+    SymbolTableEntry* entry_point = nullptr;
+    while (symbol) {
+        if (!symbol->parent && symbol->type == SymbolType::EntryPoint) {
+            entry_point = symbol;
+            break;
         }
+
+        symbol = symbol->next;
     }
 
-    // Convert size to offset
-    uint32_t offset_internal = 0;
-
-    current = static_start;
-    while (current) {
-        int32_t size = current->offset_or_size;
-
-        current->offset_or_size = offset_internal;
-        current->ip = offset_internal + function_ip;
-
-        offset_internal += size;
-
-        current = current->next;
+    if (!entry_point) {
+        ThrowOnUnreachableCode();
     }
+
+    std::stack<SymbolTableEntry*> dependency_stack { };
+    dependency_stack.push(entry_point);
+
+    do {
+        symbol = dependency_stack.top();
+        dependency_stack.pop();
+
+        if (symbol->ref_count > 0) {
+            // Function was already processed
+            continue;
+        }
+
+        symbol->ref_count++;
+
+        int32_t ip_start = symbol->ip;
+        int32_t ip_current = ip_start;
+        InstructionEntry* current = FindInstructionByIp(ip_current);
+        while (current) {
+            if (ip_current != ip_start) {
+                symbol = symbol_table;
+                while (symbol) {
+                    if (symbol->ip == ip_current &&
+                        (symbol->type == SymbolType::Function || symbol->type == SymbolType::EntryPoint)) {
+                        goto FunctionEnd;
+                    }
+                    symbol = symbol->next;
+                }
+            }
+
+            if (current->type == InstructionType::Call) {
+                SymbolTableEntry* target = current->call_statement.target;
+                if (target->type == SymbolType::SharedFunction) {
+                    target->ref_count++;
+                } else {
+                    dependency_stack.push(target);
+                }
+            }
+
+            current = current->next;
+            ip_current++;
+        }
+    FunctionEnd:
+        ;
+    } while (!dependency_stack.empty());
 }
 
 void Compiler::DeclareSharedFunctions()
@@ -1324,7 +1345,7 @@ void Compiler::DeclareSharedFunctions()
     AddSymbol("GetCommandLine", SymbolType::SharedFunction, 0, ReturnSymbolType::String,
         ExpressionType::None, 0, 0, 0, nullptr, false);
 
-    // bool StringsEqual(string a, string b);
+    // bool #StringsEqual(string a, string b);
     AddSymbol("#StringsEqual", SymbolType::SharedFunction, 0, ReturnSymbolType::Bool,
         ExpressionType::None, 0, 0, 2, nullptr, false);
 

@@ -309,6 +309,8 @@ public:
     /// <returns>Symbol entry</returns>
     SymbolTableEntry* FindSymbolByName(const char* name);
 
+    InstructionEntry* FindInstructionByIp(int32_t ip);
+
     bool CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type);
     bool CanExplicitCast(SymbolType to, SymbolType from);
     SymbolType GetLargestTypeForArithmetic(SymbolType a, SymbolType b);
@@ -342,7 +344,7 @@ private:
     void ReleaseDeclarationQueue();
     void ReleaseAll();
 
-    void SortSymbolTable();
+    void PostprocessSymbolTable();
 
     /// <summary>
     /// Declare all shared functions, so they can be eventually called

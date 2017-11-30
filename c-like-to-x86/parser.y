@@ -19,7 +19,7 @@ extern char* yytext;
 
 char output_buffer[500];
 
-Compiler c;
+extern Compiler c;
 
 %}
 
@@ -1344,7 +1344,7 @@ expression
 					is_pointer = true;
 				} else {
 					// Standard arithmetic
-					SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
+					type = c.GetLargestTypeForArithmetic($1.type, $3.type);
 					if (type == SymbolType::Unknown) {
 						throw CompilerException(CompilerExceptionSource::Statement,
 							"Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
@@ -1395,7 +1395,7 @@ expression
 				is_pointer = true;
 			} else {
 				// Standard arithmetic
-				SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
+				type = c.GetLargestTypeForArithmetic($1.type, $3.type);
 				if (type == SymbolType::Unknown) {
 					throw CompilerException(CompilerExceptionSource::Statement,
 						"Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
@@ -1854,11 +1854,6 @@ switch_next
     ;
 
 %%
-
-int __cdecl wmain(int argc, wchar_t* argv[], wchar_t* envp[])
-{
-    return c.OnRun(argc, argv);
-}
 
 void yyerror(const char* s)
 {

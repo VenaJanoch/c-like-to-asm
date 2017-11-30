@@ -56,5 +56,7 @@ struct SymbolTableEntry {
     char* parent;
     bool is_temp;
 
+    uint32_t ref_count;
+
     SymbolTableEntry* next;
 };

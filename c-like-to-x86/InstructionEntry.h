@@ -6,6 +6,7 @@
 
 enum struct InstructionType {
     Unknown,
+    Nop,
 
     Assign,
     Goto,
