@@ -69,7 +69,13 @@
         throw CompilerException(CompilerExceptionSource::Statement,         \
             "Specified expression must have constant value",                \
             loc.first_line, loc.first_column);                              \
-    } 
+    }
+
+#define CheckIsIfCompatible(exp, message, loc)                              \
+    if (!exp.true_list || !exp.false_list) {                                \
+        throw CompilerException(CompilerExceptionSource::Statement,         \
+            message, loc.first_line, loc.first_column);                     \
+    }
 
 #define CopyOperand(to, from)                       \
     {                                               \
@@ -183,6 +189,34 @@
         c.ResetScope(ScopeType::Assign);                                        \
         res.true_list = nullptr;                                                \
         res.false_list = nullptr;                                               \
+    }
+
+#define PreCallParam(exp)                                                       \
+    int32_t _true_ip, _false_ip;                                                \
+    {                                                                           \
+        _true_ip = c.NextIp();                                                  \
+        if (exp.true_list || exp.false_list) {                                  \
+            sprintf_s(output_buffer, "%s = 1", exp.value);                      \
+            InstructionEntry* _i = c.AddToStream(InstructionType::Assign, output_buffer);   \
+            _i->assignment.type = AssignType::None;                             \
+            _i->assignment.dst_value = exp.value;                               \
+            _i->assignment.op1.value = _strdup("1");                            \
+            _i->assignment.op1.type = SymbolType::Bool;                         \
+            _i->assignment.op1.exp_type = ExpressionType::Constant;             \
+        }                                                                       \
+        _false_ip = c.NextIp();                                                 \
+    }                                                                           \
+
+#define PostCallParam(exp)                                                      \
+    {                                                                           \
+        if (exp.true_list || exp.false_list) {                                  \
+            if (!exp.true_list || !exp.false_list) {                            \
+                ThrowOnUnreachableCode();                                       \
+            }                                                                   \
+            c.BackpatchStream(exp.true_list, _true_ip);                         \
+            c.BackpatchStream(exp.false_list, _false_ip);                       \
+        }                                                                       \
+        c.ResetScope(ScopeType::Assign);                                        \
     }
 
 #define PreIf()                                                                 \

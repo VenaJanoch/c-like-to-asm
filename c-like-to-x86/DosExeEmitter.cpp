@@ -565,7 +565,7 @@ void DosExeEmitter::EmitSharedFunctions()
         ret[0] = 0xC3;
     });
 
-    EmitSharedFunction("StringsEqual", [&]() {
+    EmitSharedFunction("#StringsEqual", [&]() {
         //   Create new call frame
         uint8_t* l1 = AllocateBufferForInstruction(2 + 3);
         l1[0] = 0x66;                           // Operand size prefix
@@ -968,7 +968,7 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
                 break;
             }
             case InstructionType::Push: {
-                if (ip != ip_src &&
+                if (/*ip != ip_src &&*/
                     current->push_statement.symbol->exp_type == ExpressionType::Variable &&
                     current->push_statement.symbol->name &&
                     strcmp(var->symbol->name, current->push_statement.symbol->name) == 0) {
@@ -978,7 +978,7 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
                 break;
             }
             case InstructionType::Return: {
-                if (ip != ip_src &&
+                if (/*ip != ip_src &&*/
                     current->return_statement.op.exp_type == ExpressionType::Variable &&
                     current->return_statement.op.value &&
                     strcmp(var->symbol->name, current->return_statement.op.value) == 0) {
@@ -1393,7 +1393,13 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, int32_t para
 CpuRegister DosExeEmitter::LoadVariableUnreferenced(DosVariableDescriptor* var, int32_t desired_size)
 {
     if (var->symbol->size > 0) {
-        ThrowOnUnreachableCode();
+        //ThrowOnUnreachableCode();
+        // ToDo
+        if (desired_size != 2) {
+            ThrowOnUnreachableCode();
+        }
+
+        return LoadVariablePointer(var);
     }
 
     int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, var->symbol->size == IsPointer);
@@ -3671,7 +3677,7 @@ void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr)
     // IP of shared function means reference count
     SymbolTableEntry* symbol = compiler->GetSymbols();
     while (symbol) {
-        if (symbol->type == SymbolType::SharedFunction && strcmp(symbol->name, "StringsEqual") == 0) {
+        if (symbol->type == SymbolType::SharedFunction && strcmp(symbol->name, "#StringsEqual") == 0) {
             symbol->ip++;
             break;
         }
@@ -3691,7 +3697,7 @@ void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr)
             b.backpatch_offset = (call + 1) - buffer;
             b.backpatch_ip = ip_dst;
             b.target = DosBackpatchTarget::Function;
-            b.value = "StringsEqual";
+            b.value = "#StringsEqual";
             backpatch.push_back(b);
         }
     }

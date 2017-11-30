@@ -323,6 +323,8 @@ matched_statement
 
             CheckIsIntOrBool($3, "Only integer and bool types are allowed in \"if\" statement", @3);
 
+			CheckIsIfCompatible($3, "Unsupported expression for \"if\" statement", @3);
+
             c.BackpatchStream($3.true_list, $5.ip);
             c.BackpatchStream($3.false_list, $9.ip);
             $$.next_list = MergeLists($7.next_list, $10.next_list);
@@ -360,6 +362,8 @@ matched_statement
 
             CheckIsIntOrBool($4, "Only integer and bool types are allowed in \"while\" statement", @4);
 
+			CheckIsIfCompatible($4, "Unsupported expression for \"while\" statement", @4);
+
             c.BackpatchStream($4.true_list, $6.ip);
             $$.next_list = $4.false_list;
             c.BackpatchStream($8.next_list, $2.ip);
@@ -372,7 +376,9 @@ matched_statement
         {
             LogDebug("P: Processing matched do..while");
 
-            CheckIsIntOrBool($8, "Only integer and bool types are allowed in \"while\" statement", @8);
+            CheckIsIntOrBool($8, "Only integer and bool types are allowed in \"do..while\" statement", @8);
+
+			CheckIsIfCompatible($8, "Unsupported expression for \"do..while\" statement", @8);
 
             c.BackpatchStream($4.next_list, $7.ip);
             c.BackpatchStream($8.true_list, $2.ip);
@@ -388,6 +394,8 @@ matched_statement
             CheckIsInt($3, "Integer assignment is required in the first part of \"for\" statement", @3);
             CheckIsBool($6, "Bool expression is required in the middle part of \"for\" statement", @6);
             CheckIsInt($9, "Integer assignment is required in the last part of \"for\" statement", @9);
+
+			CheckIsIfCompatible($6, "Unsupported expression for \"for\" statement", @6);
 
             c.BackpatchStream($3.true_list, $5.ip);
             c.BackpatchStream($14.next_list, $8.ip);
@@ -506,6 +514,8 @@ unmatched_statement
 
             CheckIsIntOrBool($3, "Only integer and bool types are allowed in \"if\" statement", @3);
 
+			CheckIsIfCompatible($3, "Unsupported expression for \"if\" statement", @3);
+
             c.BackpatchStream($3.true_list, $5.ip);
             $$.next_list = MergeLists($3.false_list, $6.next_list);
         }
@@ -514,6 +524,8 @@ unmatched_statement
             LogDebug("P: Processing unmatched while");
 
             CheckIsIntOrBool($4, "Only integer and bool types are allowed in \"while\" statement", @4);
+
+			CheckIsIfCompatible($4, "Unsupported expression for \"while\" statement", @4);
 
             c.BackpatchStream($4.true_list, $6.ip);
             $$.next_list = $4.false_list;
@@ -530,6 +542,8 @@ unmatched_statement
             CheckIsInt($3, "Integer assignment is required in the first part of \"for\" statement", @3);
             CheckIsBool($6, "Bool expression is required in the middle part of \"for\" statement", @6);
             CheckIsInt($9, "Integer assignment is required in the last part of \"for\" statement", @9);
+
+			CheckIsIfCompatible($6, "Unsupported expression for \"for\" statement", @6);
 
             c.BackpatchStream($3.true_list, $5.ip);
             c.BackpatchStream($14.next_list, $8.ip);
@@ -548,6 +562,8 @@ unmatched_statement
             LogDebug("P: Processing unmatched if..else");
 
             CheckIsIntOrBool($3, "Only integer and bool types are allowed in \"if\" statement", @3);
+
+			CheckIsIfCompatible($3, "Unsupported expression for \"if\" statement", @3);
 
             c.BackpatchStream($3.true_list, $5.ip);
             c.BackpatchStream($3.false_list, $9.ip);
@@ -1558,13 +1574,42 @@ expression
                     "Explicit cast cannot be used in this context", @1.first_line, @1.first_column);
 			}
 
-			if (!c.CanExplicitCast($3, $6.type)) {
+			SymbolType type = ($6.exp_type == ExpressionType::VariablePointer ? SymbolType::Uint16 : $6.type);
+			if (!c.CanExplicitCast($3, type)) {
 				throw CompilerException(CompilerExceptionSource::Statement,
                     "This explicit cast type cannot be used in this context", @1.first_line, @1.first_column);
 			}
 
 			$$ = $6;
 			$$.type = $3;
+			
+			// ToDo
+			if ($6.exp_type == ExpressionType::VariablePointer) {
+				$$.exp_type = ExpressionType::Variable;
+			}
+		}
+	| CAST '<' declaration_type '*' '>' '(' expression ')'
+		{
+			LogDebug("P: Processing explicit pointer cast");
+
+			if (!c.IsScopeActive(ScopeType::Assign)) {
+				throw CompilerException(CompilerExceptionSource::Statement,
+                    "Explicit cast cannot be used in this context", @1.first_line, @1.first_column);
+			}
+
+			SymbolType type = ($7.exp_type == ExpressionType::VariablePointer ? SymbolType::Uint16 : $7.type);
+			if (!c.CanExplicitCast($3, type)) {
+				throw CompilerException(CompilerExceptionSource::Statement,
+                    "This explicit cast type cannot be used in this context", @1.first_line, @1.first_column);
+			}
+
+			$$ = $7;
+			$$.type = $3;
+
+			// ToDo
+			if ($7.exp_type == ExpressionType::Variable) {
+				$$.exp_type = ExpressionType::VariablePointer;
+			}
 		}
     | id '(' call_parameter_list ')'
         {
@@ -1699,29 +1744,37 @@ expression
     ;
 
 call_parameter_list
-    : expression
+    : assign_marker expression
         {
             LogDebug("P: Processing call parameter list");
 
-            CheckTypeIsValid($1.type, @1);
+            CheckTypeIsValid($2.type, @2);
 
 			// Move indexed variables to temp. variables
-			PrepareIndexedVariableIfNeeded($1);
+			PrepareIndexedVariableIfNeeded($2);
 
-            $$.list = c.ToCallParameterList(nullptr, $1.type, $1.value, $1.exp_type);
+			PreCallParam($2);
+
+            $$.list = c.ToCallParameterList(nullptr, $2.type, $2.value, $2.exp_type);
             $$.count = 1;
+
+			PostCallParam($2);
         }
-    | call_parameter_list ',' expression
+    | call_parameter_list ',' assign_marker expression
         {
             LogDebug("P: Processing call parameter list");
 
-            CheckTypeIsValid($3.type, @3);
+            CheckTypeIsValid($4.type, @4);
 
 			// Move indexed variables to temp. variables
-			PrepareIndexedVariableIfNeeded($3);
+			PrepareIndexedVariableIfNeeded($4);
 
-            $$.list = c.ToCallParameterList($1.list, $3.type, $3.value, $3.exp_type);
+			PreCallParam($4);
+
+            $$.list = c.ToCallParameterList($1.list, $4.type, $4.value, $4.exp_type);
             $$.count = $1.count + 1;
+
+			PostCallParam($4);
         }
     ;
 
