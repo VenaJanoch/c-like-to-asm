@@ -681,6 +681,7 @@ void DosExeEmitter::EmitSharedFunctions()
     });
 
     // ToDo: Release allocated block on failure
+    // ToDo: Check (ptr + bytes) is fully accessible; if it's not, release and return null
     EmitSharedFunction("#Alloc", [&]() {
         //   Create new call frame
         uint8_t* l1 = AllocateBufferForInstruction(2 + 3);
@@ -917,14 +918,18 @@ void DosExeEmitter::EmitStaticData()
 
         while (it != variables.end()) {
             if (!it->symbol->parent) {
-                uint32_t var_size = compiler->GetSymbolTypeSize(it->symbol->type);
+                int32_t size;
                 if (it->symbol->size > 0) {
-                    var_size *= it->symbol->size;
+                    SymbolType resolved_type = it->symbol->type;
+                    resolved_type.pointer--;
+                    size = it->symbol->size * compiler->GetSymbolTypeSize(resolved_type);
+                } else {
+                    size = compiler->GetSymbolTypeSize(it->symbol->type);
                 }
 
                 BackpatchLabels({ it->symbol->name, ip_dst + static_size }, DosBackpatchTarget::Static);
 
-                static_size += var_size;
+                static_size += size;
             }
 
             ++it;
@@ -2505,9 +2510,13 @@ void DosExeEmitter::EmitFunctionEpilogue()
     while (it != variables.end()) {
         if (it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0) {
             if (!it->symbol->parameter) { // Local variable
-                int32_t size = compiler->GetSymbolTypeSize(it->symbol->type);
+                int32_t size;
                 if (it->symbol->size > 0) {
-                    size *= it->symbol->size;
+                    SymbolType resolved_type = it->symbol->type;
+                    resolved_type.pointer--;
+                    size = it->symbol->size * compiler->GetSymbolTypeSize(resolved_type);
+                } else {
+                    size = compiler->GetSymbolTypeSize(it->symbol->type);
                 }
 
                 if (it->symbol->ref_count == 0) {
