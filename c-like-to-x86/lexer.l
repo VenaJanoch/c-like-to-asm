@@ -507,10 +507,13 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 		int32_t length = strlen(string_buffer);
 		BaseSymbolType type;
 		uint32_t value;
-		if (length >= 4) {
+		if (length > 4) {
+			throw CompilerException(CompilerExceptionSource::Syntax,
+				"Character literal is too long", yylloc.first_line, yylloc.first_column);
+		} else if (length > 2) {
 			type = BaseSymbolType::Uint32;
 			value = *(uint32_t*)string_buffer;
-		} else if (length >= 2) {
+		} else if (length > 1) {
 			type = BaseSymbolType::Uint16;
 			value = *(uint32_t*)string_buffer & 0xffff;
 		} else {
