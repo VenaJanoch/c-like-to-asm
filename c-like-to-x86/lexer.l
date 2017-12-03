@@ -5,6 +5,7 @@
 %option stack
 
 %x STATE_STRING
+%x STATE_CHAR
 
 %{
 #include <stdio.h>
@@ -42,6 +43,7 @@ DIRECTIVE ("#".*{NEWLINE})
 INTEGER (0|[1-9][0-9]*)
 BOOL_TRUE true
 BOOL_FALSE false
+NULL null
 IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 %%
@@ -298,6 +300,12 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
     return CAST;
 }
 
+"alloc" {
+    LogDebug("L: Found \"alloc\"");
+
+    return ALLOC;
+}
+
 "++" {
     LogDebug("L: Found ++");
 
@@ -366,11 +374,11 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
     int32_t value = atoi(yytext);
     if (value == (int8_t)value || value == (uint8_t)value) {
-        yylval.expression.type = SymbolType::Uint8;
+        yylval.expression.type = { BaseSymbolType::Uint8, 0 };
     } else if (value == (int16_t)value || value == (uint16_t)value) {
-        yylval.expression.type = SymbolType::Uint16;
+        yylval.expression.type = { BaseSymbolType::Uint16, 0 };
     } else {
-        yylval.expression.type = SymbolType::Uint32;
+        yylval.expression.type = { BaseSymbolType::Uint32, 0 };
     }
 
     allow_unary = false;
@@ -382,7 +390,7 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
     yylval.expression.value = _strdup("1");
     yylval.expression.exp_type = ExpressionType::Constant;
-    yylval.expression.type = SymbolType::Bool;
+    yylval.expression.type = { BaseSymbolType::Bool, 0 };
     allow_unary = false;
     return CONSTANT;
 }
@@ -392,7 +400,17 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
     yylval.expression.value = _strdup("0");
     yylval.expression.exp_type = ExpressionType::Constant;
-    yylval.expression.type = SymbolType::Bool;
+    yylval.expression.type = { BaseSymbolType::Bool, 0 };
+    allow_unary = false;
+    return CONSTANT;
+}
+
+{NULL} {
+    LogDebug("L: Found null");
+
+    yylval.expression.value = _strdup("0");
+    yylval.expression.exp_type = ExpressionType::Constant;
+    yylval.expression.type = { BaseSymbolType::Void, 1 };
     allow_unary = false;
     return CONSTANT;
 }
@@ -419,7 +437,7 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 		yylval.expression.value = _strdup(string_buffer);
 		yylval.expression.exp_type = ExpressionType::Constant;
-		yylval.expression.type = SymbolType::String;
+		yylval.expression.type = { BaseSymbolType::String, 0 };
 		allow_unary = false;
 
 		return CONSTANT;
@@ -459,6 +477,89 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
 
 	[^\\\n\"]+ {
 		// Everything but '\', '"' and new-line
+        char* ptr = yytext;
+        while (*ptr) {
+			*(string_buffer_ptr++) = *(ptr++);
+		}
+    }
+}
+
+\' {
+	string_buffer_ptr = string_buffer;
+	BEGIN(STATE_CHAR);
+}
+
+<STATE_CHAR>{
+	\' {
+		BEGIN(INITIAL);
+
+		if (string_buffer == string_buffer_ptr) {
+			throw CompilerException(CompilerExceptionSource::Syntax,
+				"Character literal must not be empty", yylloc.first_line, yylloc.first_column);
+		}
+
+		// Fill remaining places with zeroes
+		*(string_buffer_ptr++) = '\0';
+		*(string_buffer_ptr++) = '\0';
+
+		LogDebug("L: Found character constant \"" << string_buffer << "\"");
+
+		int32_t length = strlen(string_buffer);
+		BaseSymbolType type;
+		uint32_t value;
+		if (length >= 4) {
+			type = BaseSymbolType::Uint32;
+			value = *(uint32_t*)string_buffer;
+		} else if (length >= 2) {
+			type = BaseSymbolType::Uint16;
+			value = *(uint32_t*)string_buffer & 0xffff;
+		} else {
+			type = BaseSymbolType::Uint8;
+			value = *(uint32_t*)string_buffer & 0xff;
+		}
+
+		yylval.expression.value = _strdup(std::to_string(value).c_str());
+		yylval.expression.exp_type = ExpressionType::Constant;
+		yylval.expression.type = { type, 0 };
+		allow_unary = false;
+
+		return CONSTANT;
+	}
+
+	\n {
+		throw CompilerException(CompilerExceptionSource::Syntax,
+            "Character literal is not terminated at the end of the line", yylloc.first_line, yylloc.first_column);
+	}
+
+	\\[0-7]{1,3} {
+		// Octal escape sequence
+		int32_t result;
+		sscanf_s(yytext + 1, "%o", &result);
+
+		if (result > 0xff) {
+			throw CompilerException(CompilerExceptionSource::Syntax,
+				"Character literal escape sequence is out of bounds", yylloc.first_line, yylloc.first_column);
+		}
+
+		*string_buffer_ptr = result;
+		string_buffer_ptr++;
+	}
+
+	\\[0-9]+ {
+		throw CompilerException(CompilerExceptionSource::Syntax,
+			"Character literal escape sequence is not in octal format", yylloc.first_line, yylloc.first_column);
+	}
+
+	\\n  { *(string_buffer_ptr++) = '\n'; }
+	\\t  { *(string_buffer_ptr++) = '\t'; }
+	\\r  { *(string_buffer_ptr++) = '\r'; }
+	\\b  { *(string_buffer_ptr++) = '\b'; }
+	\\f  { *(string_buffer_ptr++) = '\f'; }
+
+	\\(.|\n)  { *(string_buffer_ptr++) = yytext[1]; }
+
+	[^\\\n\']+ {
+		// Everything but '\', ''' and new-line
         char* ptr = yytext;
         while (*ptr) {
 			*(string_buffer_ptr++) = *(ptr++);

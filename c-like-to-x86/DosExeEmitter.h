@@ -340,8 +340,6 @@ private:
 
     void EmitSharedFunction(char* name, std::function<void()> emitter);
 
-    int8_t SizeToShift(int32_t size);
-
     // Output buffer management
     uint8_t* AllocateBuffer(uint32_t size);
     uint8_t* AllocateBufferForInstruction(uint32_t size);

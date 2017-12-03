@@ -29,7 +29,7 @@ extern Compiler c;
 //%define parse.trace
 
 %token CONST STATIC VOID BOOL UINT8 UINT16 UINT32 STRING CONSTANT IDENTIFIER
-%token IF ELSE RETURN DO WHILE FOR SWITCH CASE DEFAULT CONTINUE BREAK GOTO CAST
+%token IF ELSE RETURN DO WHILE FOR SWITCH CASE DEFAULT CONTINUE BREAK GOTO CAST ALLOC
 %token INC_OP DEC_OP U_PLUS U_MINUS  
 %token EQUAL NOT_EQUAL GREATER_OR_EQUAL LESS_OR_EQUAL SHIFT_LEFT SHIFT_RIGHT LOG_AND LOG_OR
 
@@ -49,7 +49,6 @@ extern Compiler c;
     char* string;
     int32_t integer;
 	SymbolType type;
-    ReturnSymbolType return_type;
 
 	struct {
 		SymbolType type;
@@ -93,7 +92,6 @@ extern Compiler c;
 %type <string> id IDENTIFIER
 %type <type> declaration_type
 %type <declaration> declaration static_declaration
-%type <return_type> return_type
 %type <expression> expression assignment_with_declaration assignment CONSTANT
 %type <statement> statement statement_list matched_statement unmatched_statement program function_body function
 %type <switch_statement> switch_statement case_list default_statement
@@ -144,14 +142,14 @@ program
 
 // Parts of function declaration
 function
-    : return_type id '(' parameter_list ')' ';'
+    : declaration_type id '(' parameter_list ')' ';'
         {
             c.AddFunctionPrototype($2, $1);
 
             // Nothing to backpatch here...
             $$.next_list = nullptr;
         }
-    | return_type id '(' parameter_list ')' function_body
+    | declaration_type id '(' parameter_list ')' function_body
         {
             c.AddFunction($2, $1);
             $$.next_list = $6.next_list;
@@ -197,75 +195,46 @@ parameter_list
 
 // Types that can be used for variable declarations and function parameters
 declaration_type
-    : BOOL
+    : declaration_type '*'
+		{
+			$$ = $1;
+			$$.pointer++;
+		}
+	| BOOL
         {
-            $$ = SymbolType::Bool;
+            $$ = { BaseSymbolType::Bool, 0 };
 
             LogDebug("P: Found BOOL declaration_type");
         }
     | UINT8
         {
-            $$ = SymbolType::Uint8;
+            $$ = { BaseSymbolType::Uint8, 0 };
 
             LogDebug("P: Found UINT8 declaration_type");
         }
     | UINT16
         {
-            $$ = SymbolType::Uint16;
+            $$ = { BaseSymbolType::Uint16, 0 };
 
             LogDebug("P: Found UINT16 declaration_type");
         }
     | UINT32
         {
-            $$ = SymbolType::Uint32;
+            $$ = { BaseSymbolType::Uint32, 0 };
 
             LogDebug("P: Found UINT32 declaration_type");
         }
     | STRING
         {
-            $$ = SymbolType::String;
+            $$ = { BaseSymbolType::String, 0 };
 
             LogDebug("P: Found STRING declaration_type");
         }
-    ;
-
-// Types that can be used for function return value
-return_type
-    : BOOL
+	| VOID
         {
-            $$ = ReturnSymbolType::Bool;
+            $$ = { BaseSymbolType::Void, 0 };
 
-            LogDebug("P: Found BOOL return_type");
-        }
-    | UINT8
-        {
-            $$ = ReturnSymbolType::Uint8;
-
-            LogDebug("P: Found UINT8 return_type");
-        }
-    | UINT16
-        {
-            $$ = ReturnSymbolType::Uint16;
-
-            LogDebug("P: Found UINT16 return_type");
-        }
-    | UINT32
-        {
-            $$ = ReturnSymbolType::Uint32;
-
-            LogDebug("P: Found UINT32 return_type");
-        }
-    | STRING
-        {
-            $$ = ReturnSymbolType::String;
-
-            LogDebug("P: Found STRING return_type");
-        }
-    | VOID
-        {
-            $$ = ReturnSymbolType::Void;
-
-            LogDebug("P: Found VOID return_type");
+            LogDebug("P: Found VOID declaration_type");
         }
     ;
 
@@ -344,7 +313,7 @@ matched_statement
             $$.next_list = nullptr;
             sprintf_s(output_buffer, "return");
             InstructionEntry* i = c.AddToStream(InstructionType::Return, output_buffer);
-			i->return_statement.op.type = SymbolType::None;
+			i->return_statement.op.type = { BaseSymbolType::None, 0 };
             i->return_statement.op.exp_type = ExpressionType::None;
         }
     | RETURN assignment ';'
@@ -662,7 +631,7 @@ declaration
 	| declaration_type '<' CONSTANT '>' id
         {
 			CheckIsInt($3, "Array declaration must contain size of integer type", @3);
-			CheckTypeIsArrayCompatible($1, "Specified type cannot be used as array type", @1);
+			CheckTypeIsPointerCompatible($1, "Specified type cannot be used as array type", @1);
 
 			int32_t size = atoi($3.value);
 			if (size < 1 || size > UINT16_MAX) {
@@ -670,21 +639,13 @@ declaration
 					"Specified array size is out of bounds", @3.first_line, @3.first_column);
 			}
 
+			$1.pointer++;
+
             $$.type = $1;
 			$$.size = size;
             c.ToDeclarationList($1, size, $5, ExpressionType::Variable);
 
             LogDebug("P: Found array variable declaration");
-        }
-	| declaration_type '*' id
-        {
-			CheckTypeIsArrayCompatible($1, "Specified type cannot be used as array type", @1);
-
-            $$.type = $1;
-			$$.size = IsPointer;
-            c.ToDeclarationList($1, IsPointer, $3, ExpressionType::Variable);
-
-            LogDebug("P: Found pointer variable declaration");
         }
     | declaration ',' id
         {
@@ -715,7 +676,7 @@ static_declaration
 	| STATIC declaration_type '<' CONSTANT '>' id
         {
 			CheckIsInt($4, "Array declaration must contain size of integer type", @4);
-			CheckTypeIsArrayCompatible($2, "Specified type cannot be used as array type", @2);
+			CheckTypeIsPointerCompatible($2, "Specified type cannot be used as array type", @2);
 
 			int32_t size = atoi($4.value);
 			if (size < 1 || size > UINT16_MAX) {
@@ -723,21 +684,13 @@ static_declaration
 					"Specified array size is out of bounds", @4.first_line, @4.first_column);
 			}
 
+			$2.pointer++;
+
             $$.type = $2;
 			$$.size = size;
             c.AddStaticVariable($2, size, $6);
 
             LogDebug("P: Found static array variable declaration");
-        }
-	| STATIC declaration_type '*' id
-        {
-			CheckTypeIsArrayCompatible($2, "Specified type cannot be used as array type", @2);
-
-            $$.type = $2;
-			$$.size = IsPointer;
-            c.AddStaticVariable($2, IsPointer, $4);
-
-            LogDebug("P: Found static pointer variable declaration");
         }
     | static_declaration ',' id
         {
@@ -777,22 +730,12 @@ assignment
                     message, @1.first_line, @1.first_column);
             }
 
-			if (decl->size == IsPointer) {
-				if ($4.exp_type != ExpressionType::Constant && $4.exp_type != ExpressionType::VariablePointer) {
-					std::string message = "Cannot assign \"";
-					message += $4.value;
-					message += "\" to pointer";
-					throw CompilerException(CompilerExceptionSource::Statement,
-						message, @1.first_line, @1.first_column);
-				}
-			} else {
-			    if (!c.CanImplicitCast(decl->type, $4.type, $4.exp_type)) {
-					std::string message = "Cannot assign to variable \"";
-					message += $1;
-					message += "\" because of type mismatch";
-					throw CompilerException(CompilerExceptionSource::Statement,
-						message, @1.first_line, @1.first_column);
-				}
+			if (!c.CanImplicitCast(decl->type, $4.type, $4.exp_type)) {
+				std::string message = "Cannot assign to variable \"";
+				message += $1;
+				message += "\" because of type mismatch";
+				throw CompilerException(CompilerExceptionSource::Statement,
+					message, @1.first_line, @1.first_column);
 			}
 
 			PreAssign($4);
@@ -811,7 +754,7 @@ assignment
 
 			$$.value = $1;
             $$.type = decl->type;
-            $$.exp_type = (decl->size == IsPointer ? ExpressionType::VariablePointer : ExpressionType::Variable);
+            $$.exp_type = ExpressionType::Variable;
 			$$.index.value = nullptr;
 
 			PostAssign($$, $4);
@@ -845,10 +788,10 @@ assignment
                     message, @1.first_line, @1.first_column);
             }
 
-			if (!decl->size) {
+			if (decl->type.pointer == 0) {
                 std::string message = "Variable \"";
                 message += $1;
-                message += "\" is not declared as array";
+                message += "\" is not declared as pointer";
                 throw CompilerException(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
@@ -963,41 +906,6 @@ assignment_with_declaration
 			$$.index.value = nullptr;
 
 			PostAssign($$, $5);
-        }
-	| declaration_type '*' id '=' assign_marker assignment
-        {
-            LogDebug("P: Found pointer variable declaration with assignment \"" << $3 << "\"");
-
-			if ($6.exp_type != ExpressionType::Constant && $6.exp_type != ExpressionType::VariablePointer) {
-				std::string message = "Cannot assign \"";
-				message += $6.value;
-				message += "\" to pointer";
-				throw CompilerException(CompilerExceptionSource::Statement,
-					message, @1.first_line, @1.first_column);
-			}
-
-			PreAssign($6);
-
-			SymbolTableEntry* decl = c.ToDeclarationList($1, IsPointer, $3, ExpressionType::None);
-
-			if ($6.index.value) {
-				sprintf_s(output_buffer, "%s = %s[%s]", $3, $6.value, $6.index.value);
-			} else {
-				sprintf_s(output_buffer, "%s = %s", $3, $6.value);
-			}
-            InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
-            i->assignment.type = AssignType::None;
-            i->assignment.dst_value = decl->name;
-            CopyOperand(i->assignment.op1, $6);
-
-			//$$.true_list = $6.true_list;
-
-			$$.value = $3;
-            $$.type = $1;
-            $$.exp_type = ExpressionType::VariablePointer;
-			$$.index.value = nullptr;
-
-			PostAssign($$, $6);
         }
     ;
 
@@ -1130,7 +1038,7 @@ expression
         {
             LogDebug("P: Processing logical not equal");
 
-            if ($1.type != SymbolType::String || $3.type != SymbolType::String) {
+            if ($1.type.base != BaseSymbolType::String || $3.type.base != BaseSymbolType::String) {
 			    CheckIsIntOrBool($1, "Only integer and bool types are allowed in comparsions", @1);
 				CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
 			}
@@ -1152,7 +1060,7 @@ expression
         {
             LogDebug("P: Processing logical equal");
 
-			if ($1.type != SymbolType::String || $3.type != SymbolType::String) {
+			if ($1.type.base != BaseSymbolType::String || $3.type.base != BaseSymbolType::String) {
 			    CheckIsIntOrBool($1, "Only integer and bool types are allowed in comparsions", @1);
 				CheckIsIntOrBool($3, "Only integer and bool types are allowed in comparsions", @3);
 			}
@@ -1168,11 +1076,11 @@ expression
             sprintf_s(output_buffer, "goto");
             $$.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer);
 
-            if ($1.type == SymbolType::Bool) {
+            if ($1.type.base == BaseSymbolType::Bool) {
                 $$.true_list = MergeLists($$.true_list, $1.true_list);
                 $$.false_list = MergeLists($$.false_list, $1.false_list);
             }
-            if ($3.type == SymbolType::Bool) {
+            if ($3.type.base == BaseSymbolType::Bool) {
                 $$.true_list = MergeLists($$.true_list, $3.true_list);
                 $$.false_list = MergeLists($$.false_list, $3.false_list);
             }
@@ -1309,17 +1217,17 @@ expression
         }
     | expression '+' expression
         {
-            if ($1.type == SymbolType::String && $3.type == SymbolType::String) {
+            if ($1.type.base == BaseSymbolType::String && $3.type.base == BaseSymbolType::String) {
                 LogDebug("P: Processing string concatenation");
             
-                SymbolTableEntry* decl = c.GetUnusedVariable(SymbolType::String);
+                SymbolTableEntry* decl = c.GetUnusedVariable({ BaseSymbolType::String, 0 });
 
                 sprintf_s(output_buffer, "%s = %s + %s", decl->name, $1.value, $3.value);
                 InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
                 FillInstructionForAssign(i, AssignType::Add, decl, $1, $3);
 
                 $$.value = decl->name;
-                $$.type = SymbolType::String;
+                $$.type = { BaseSymbolType::String, 0 };
                 $$.exp_type = ExpressionType::Variable;
 				$$.index.value = nullptr;
                 $$.true_list = nullptr;
@@ -1328,29 +1236,25 @@ expression
                 LogDebug("P: Processing addition");
 
 				SymbolType type;
-				bool is_pointer;
-				if ($1.exp_type == ExpressionType::VariablePointer || $3.exp_type == ExpressionType::VariablePointer) {
+				if ($1.type.pointer > 0 || $3.type.pointer > 0) {
 					// Pointer arithmetic
-					if ($1.exp_type == $3.exp_type) {
+					if ($1.type.pointer > 0 && $3.type.pointer > 0) {
 						// ToDo
 						ThrowOnUnreachableCode();
 					}
 
-					if ($1.exp_type == ExpressionType::VariablePointer) {
+					if ($1.type.pointer > 0) {
 						type = $1.type;
 					} else {
 						type = $3.type;
 					}
-					is_pointer = true;
 				} else {
 					// Standard arithmetic
 					type = c.GetLargestTypeForArithmetic($1.type, $3.type);
-					if (type == SymbolType::Unknown) {
+					if (type.base == BaseSymbolType::Unknown) {
 						throw CompilerException(CompilerExceptionSource::Statement,
 							"Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
 					}
-
-					is_pointer = false;
 				}
 
 				// Move indexed variables to temp. variables
@@ -1358,9 +1262,6 @@ expression
 				PrepareIndexedVariableIfNeeded($3);
 
                 SymbolTableEntry* decl = c.GetUnusedVariable(type);
-				if (is_pointer) {
-					decl->size = IsPointer;
-				}
 
                 sprintf_s(output_buffer, "%s = %s + %s", decl->name, $1.value, $3.value);
                 InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
@@ -1368,7 +1269,7 @@ expression
 
                 $$.value = decl->name;
                 $$.type = type;
-                $$.exp_type = (is_pointer ? ExpressionType::VariablePointer : ExpressionType::Variable);
+                $$.exp_type = ExpressionType::Variable;
 				$$.index.value = nullptr;
                 $$.true_list = nullptr;
                 $$.false_list = nullptr;
@@ -1379,29 +1280,25 @@ expression
             LogDebug("P: Processing substraction");
 
 			SymbolType type;
-			bool is_pointer;
-			if ($1.exp_type == ExpressionType::VariablePointer || $3.exp_type == ExpressionType::VariablePointer) {
+			if ($1.type.pointer > 0 || $3.type.pointer > 0) {
 				// Pointer arithmetic
-				if ($1.exp_type == $3.exp_type) {
+				if ($1.type.pointer > 0 && $3.type.pointer > 0) {
 					// ToDo
 					ThrowOnUnreachableCode();
 				}
 
-				if ($1.exp_type == ExpressionType::VariablePointer) {
+				if ($1.type.pointer > 0) {
 					type = $1.type;
 				} else {
 					type = $3.type;
 				}
-				is_pointer = true;
 			} else {
 				// Standard arithmetic
 				type = c.GetLargestTypeForArithmetic($1.type, $3.type);
-				if (type == SymbolType::Unknown) {
+				if (type.base == BaseSymbolType::Unknown) {
 					throw CompilerException(CompilerExceptionSource::Statement,
 						"Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
 				}
-
-				is_pointer = false;
 			}
 
 			// Move indexed variables to temp. variables
@@ -1409,9 +1306,6 @@ expression
 			PrepareIndexedVariableIfNeeded($3);
 
             SymbolTableEntry* decl = c.GetUnusedVariable(type);
-			if (is_pointer) {
-				decl->size = IsPointer;
-			}
 
             sprintf_s(output_buffer, "%s = %s - %s", decl->name, $1.value, $3.value);
             InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
@@ -1419,7 +1313,7 @@ expression
 
             $$.value = decl->name;
             $$.type = type;
-            $$.exp_type = (is_pointer ? ExpressionType::VariablePointer : ExpressionType::Variable);
+            $$.exp_type = ExpressionType::Variable;
 			$$.index.value = nullptr;
             $$.true_list = nullptr;
             $$.false_list = nullptr;
@@ -1429,7 +1323,7 @@ expression
             LogDebug("P: Processing multiplication");
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
-            if (type == SymbolType::Unknown) {
+            if (type.base == BaseSymbolType::Unknown) {
                 throw CompilerException(CompilerExceptionSource::Statement,
                     "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
             }
@@ -1456,7 +1350,7 @@ expression
             LogDebug("P: Processing division");
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
-            if (type == SymbolType::Unknown) {
+            if (type.base == BaseSymbolType::Unknown) {
                 throw CompilerException(CompilerExceptionSource::Statement,
                     "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
             }
@@ -1483,7 +1377,7 @@ expression
             LogDebug("P: Processing remainder");
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
-            if (type == SymbolType::Unknown) {
+            if (type.base == BaseSymbolType::Unknown) {
                 throw CompilerException(CompilerExceptionSource::Statement,
                     "Specified type is not allowed in arithmetic operations", @1.first_line, @1.first_column);
             }
@@ -1509,11 +1403,11 @@ expression
         {
             LogDebug("P: Processing logical not");
 
-            if ($2.type == SymbolType::Bool) {
+            if ($2.type.base == BaseSymbolType::Bool && $2.type.pointer == 0) {
                 $$ = $2;
                 $$.true_list = $2.false_list;
                 $$.false_list = $2.true_list;
-            } else if ($2.type == SymbolType::Uint8 || $2.type == SymbolType::Uint16 || $2.type == SymbolType::Uint32) {
+            } else if ($2.type.base == BaseSymbolType::Uint8 || $2.type.base == BaseSymbolType::Uint16 || $2.type.base == BaseSymbolType::Uint32) {
                 sprintf_s(output_buffer, "if (%s != 0) goto", $2.value);
                 CreateIfConstWithBackpatch($$.false_list, CompareType::NotEqual, $2, "0");
 
@@ -1574,49 +1468,81 @@ expression
                     "Explicit cast cannot be used in this context", @1.first_line, @1.first_column);
 			}
 
-			SymbolType type = ($6.exp_type == ExpressionType::VariablePointer ? SymbolType::Uint16 : $6.type);
-			if (!c.CanExplicitCast($3, type)) {
+			if (!c.CanExplicitCast($3, $6.type)) {
 				throw CompilerException(CompilerExceptionSource::Statement,
                     "This explicit cast type cannot be used in this context", @1.first_line, @1.first_column);
 			}
 
 			$$ = $6;
 			$$.type = $3;
-			
-			// ToDo
-			if ($6.exp_type == ExpressionType::VariablePointer) {
-				$$.exp_type = ExpressionType::Variable;
-			}
 		}
-	| CAST '<' declaration_type '*' '>' '(' expression ')'
+	| ALLOC '<' declaration_type '>' '(' expression ')'
 		{
-			LogDebug("P: Processing explicit pointer cast");
+			LogDebug("P: Processing alloc");
 
 			if (!c.IsScopeActive(ScopeType::Assign)) {
 				throw CompilerException(CompilerExceptionSource::Statement,
-                    "Explicit cast cannot be used in this context", @1.first_line, @1.first_column);
+                    "Allocation cannot be used in this context", @1.first_line, @1.first_column);
 			}
 
-			SymbolType type = ($7.exp_type == ExpressionType::VariablePointer ? SymbolType::Uint16 : $7.type);
-			if (!c.CanExplicitCast($3, type)) {
-				throw CompilerException(CompilerExceptionSource::Statement,
-                    "This explicit cast type cannot be used in this context", @1.first_line, @1.first_column);
+			CheckTypeIsPointerCompatible($3, "Specified type cannot be used for allocation", @3);
+			CheckIsInt($6, "Only integer types are allowed to specify memory block size", @6);
+
+			SymbolTableEntry* func = c.GetFunction("#Alloc");
+			if (!func) {
+				ThrowOnUnreachableCode();
 			}
 
-			$$ = $7;
-			$$.type = $3;
+			SymbolType ptr_type = $3;
+			ptr_type.pointer++;
 
-			// ToDo
-			if ($7.exp_type == ExpressionType::Variable) {
-				$$.exp_type = ExpressionType::VariablePointer;
+			// Move indexed variables to temp. variables
+			PrepareIndexedVariableIfNeeded($6);
+
+            SymbolTableEntry* decl = c.GetUnusedVariable(ptr_type);
+
+			uint8_t shift = c.SizeToShift(c.GetSymbolTypeSize($3));
+
+			SymbolTableEntry* param_copy = new SymbolTableEntry();
+			if (shift == 0) {
+				param_copy->name = _strdup($6.value);
+				param_copy->type = $6.type;
+				param_copy->exp_type = $6.exp_type;
+			} else {
+				SymbolTableEntry* param = c.GetUnusedVariable({ BaseSymbolType::Uint32, 0 });
+
+				sprintf_s(output_buffer, "%s = %s << %u", param->name, $6.value, shift);
+				InstructionEntry* i1 = c.AddToStream(InstructionType::Assign, output_buffer);
+				i1->assignment.type = AssignType::ShiftLeft;
+				i1->assignment.dst_value = param->name;
+				CopyOperand(i1->assignment.op1, $6);
+				i1->assignment.op2.value = _strdup(std::to_string(shift).c_str());
+				i1->assignment.op2.type = { BaseSymbolType::Uint8, 0 };
+				i1->assignment.op2.exp_type = ExpressionType::Constant;
+				i1->assignment.op2.index.value = nullptr;
+
+				param_copy->name = _strdup(param->name);
+				param_copy->type = param->type;
+				param_copy->exp_type = param->exp_type;
 			}
+
+            $$.value = decl->name;
+			$$.type = decl->type;
+            $$.exp_type = ExpressionType::Variable;
+			$$.index.value = nullptr;
+            c.PrepareForCall(func->name, param_copy, 1);
+
+            sprintf_s(output_buffer, "%s = call %s (%d)", decl->name, func->name, 1);
+            InstructionEntry* i2 = c.AddToStream(InstructionType::Call, output_buffer);
+            i2->call_statement.target = func;
+            i2->call_statement.return_symbol = decl->name;
 		}
     | id '(' call_parameter_list ')'
         {
             LogDebug("P: Processing function call with parameters");
 
             SymbolTableEntry* func = c.GetFunction($1);
-            if (!func || func->return_type == ReturnSymbolType::Unknown) {
+            if (!func || func->return_type.base == BaseSymbolType::Unknown) {
                 std::string message = "Function \"";
                 message += $1;
                 message += "\" is not defined";
@@ -1624,29 +1550,29 @@ expression
                     message, @1.first_line, @1.first_column);
             }
 
-            if (func->return_type == ReturnSymbolType::Void) {
+            if (func->return_type.base == BaseSymbolType::Void && func->return_type.pointer == 0) {
                 // Has void return
-                $$.type = SymbolType::None;
+                $$.type = { BaseSymbolType::None, 0 };
                 $$.value = nullptr;
                 $$.exp_type = ExpressionType::None;
 				$$.index.value = nullptr;
-                c.PrepareForCall($1, $3.list, $3.count);
+                c.PrepareForCall(func->name, $3.list, $3.count);
 
-                sprintf_s(output_buffer, "call %s (%d)", $1, $3.count);
+                sprintf_s(output_buffer, "call %s (%d)", func->name, $3.count);
                 InstructionEntry* i = c.AddToStream(InstructionType::Call, output_buffer);
                 i->call_statement.target = func;
             } else {
                 // Has return value
-				$$.type = c.ReturnSymbolTypeToSymbolType(func->return_type);
+				$$.type = func->return_type;
 
                 SymbolTableEntry* decl = c.GetUnusedVariable($$.type);
 
                 $$.value = decl->name;
                 $$.exp_type = ExpressionType::Variable;
 				$$.index.value = nullptr;
-                c.PrepareForCall($1, $3.list, $3.count);
+                c.PrepareForCall(func->name, $3.list, $3.count);
 
-                sprintf_s(output_buffer, "%s = call %s (%d)", decl->name, $1, $3.count);
+                sprintf_s(output_buffer, "%s = call %s (%d)", decl->name, func->name, $3.count);
                 InstructionEntry* i = c.AddToStream(InstructionType::Call, output_buffer);
                 i->call_statement.target = func;
                 i->call_statement.return_symbol = decl->name;
@@ -1657,7 +1583,7 @@ expression
             LogDebug("P: Processing function call");
 
             SymbolTableEntry* func = c.GetFunction($1);
-            if (!func || func->return_type == ReturnSymbolType::Unknown) {
+            if (!func || func->return_type.base == BaseSymbolType::Unknown) {
                 std::string message = "Function \"";
                 message += $1;
                 message += "\" is not defined";
@@ -1665,29 +1591,29 @@ expression
                     message, @1.first_line, @1.first_column);
             }
 
-            if (func->return_type == ReturnSymbolType::Void) {
+            if (func->return_type.base == BaseSymbolType::Void && func->return_type.pointer == 0) {
                 // Has return value
-                $$.type = SymbolType::None;
+                $$.type = { BaseSymbolType::None, 0 };
                 $$.value = nullptr;
                 $$.exp_type = ExpressionType::None;
 				$$.index.value = nullptr;
-                c.PrepareForCall($1, nullptr, 0);
+                c.PrepareForCall(func->name, nullptr, 0);
 
-                sprintf_s(output_buffer, "call %s (%d)", $1, 0);
+                sprintf_s(output_buffer, "call %s (%d)", func->name, 0);
                 InstructionEntry* i = c.AddToStream(InstructionType::Call, output_buffer);
                 i->call_statement.target = func;
             } else {
                 // Has return value
-				$$.type = c.ReturnSymbolTypeToSymbolType(func->return_type);
+				$$.type = func->return_type;
 
                 SymbolTableEntry* decl = c.GetUnusedVariable($$.type);
 
                 $$.value = decl->name;
                 $$.exp_type = ExpressionType::Variable;
 				$$.index.value = nullptr;
-                c.PrepareForCall($1, nullptr, 0);
+                c.PrepareForCall(func->name, nullptr, 0);
 
-                sprintf_s(output_buffer, "%s = call %s (%d)", decl->name, $1, 0);
+                sprintf_s(output_buffer, "%s = call %s (%d)", decl->name, func->name, 0);
                 InstructionEntry* i = c.AddToStream(InstructionType::Call, output_buffer);
                 i->call_statement.target = func;
                 i->call_statement.return_symbol = decl->name;
@@ -1706,10 +1632,10 @@ expression
                     message, @1.first_line, @1.first_column);
             }
 
-			if (!param->size) {
+			if (param->type.pointer == 0) {
                 std::string message = "Variable \"";
                 message += $1;
-                message += "\" is not declared as array";
+                message += "\" is not declared as pointer";
                 throw CompilerException(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
@@ -1738,7 +1664,7 @@ expression
 
             $$.value = $1;
             $$.type = param->type;
-            $$.exp_type = (param->size != 0 ? ExpressionType::VariablePointer : ExpressionType::Variable);
+            $$.exp_type = ExpressionType::Variable;
 			$$.index.value = nullptr;
         }
     ;

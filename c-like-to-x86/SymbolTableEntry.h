@@ -5,7 +5,7 @@
 /// <summary>
 /// All available types of symbols
 /// </summary>
-enum struct SymbolType {
+enum struct BaseSymbolType {
     Unknown,
     None,
 
@@ -16,6 +16,7 @@ enum struct SymbolType {
 
     Label,
 
+    Void,
     Bool,
     Uint8,
     Uint16,
@@ -23,36 +24,38 @@ enum struct SymbolType {
     String
 };
 
-/// <summary>
-/// Types of symbols which can be used as return of the function
-/// </summary>
-enum struct ReturnSymbolType {
-    Unknown,
-
-    Void,
-    Bool,
-    Uint8,
-    Uint16,
-    Uint32,
-    String,
+struct SymbolType {
+    BaseSymbolType base;
+    uint8_t pointer;
 };
+
+inline bool operator==(const SymbolType& lhs, const SymbolType& rhs)
+{
+    return lhs.base == rhs.base && lhs.pointer == rhs.pointer;
+}
+
+inline bool operator!=(const SymbolType& lhs, const SymbolType& rhs)
+{
+    return lhs.base != rhs.base || lhs.pointer != rhs.pointer;
+}
 
 enum struct ExpressionType {
     None,
 
     Constant,
-    Variable,
-    VariablePointer
+    Variable
 };
 
 // ToDo: Remove "offset_or_size" variable
 struct SymbolTableEntry {
     char* name;
     SymbolType type;
-    int32_t size;
-    ReturnSymbolType return_type;
+    SymbolType return_type;
     ExpressionType exp_type;
-    int32_t ip, offset_or_size, parameter;
+
+    int32_t size;
+    
+    int32_t ip, parameter;
     char* parent;
     bool is_temp;
 

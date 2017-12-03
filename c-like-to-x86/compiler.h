@@ -18,13 +18,12 @@
 /// </summary>
 #define EntryPointName "Main"
 
-#define IsPointer (-1)
-
 // Defines to shorten the code
-#define TypeIsValid(type)                                                       \
-    (type == SymbolType::Uint8  || type == SymbolType::Uint16 ||                \
-     type == SymbolType::Uint32 || type == SymbolType::Bool   ||                \
-     type == SymbolType::String)
+#define TypeIsValid(type)                                                           \
+    (type.base == BaseSymbolType::Uint8  || type.base == BaseSymbolType::Uint16 ||  \
+     type.base == BaseSymbolType::Uint32 || type.base == BaseSymbolType::Bool   ||  \
+     type.base == BaseSymbolType::String ||                                         \
+     (type.base == BaseSymbolType::Void && type.pointer > 0))
 
 #define CheckTypeIsValid(type, loc)                                             \
     if (!TypeIsValid(type)) {                                                   \
@@ -32,34 +31,34 @@
             "Specified type is not allowed", loc.first_line, loc.first_column); \
     }  
 
-#define CheckTypeIsArrayCompatible(type, message, loc)                      \
-    if (type != SymbolType::Uint8  &&                                       \
-        type != SymbolType::Uint16 &&                                       \
-        type != SymbolType::Uint32 &&                                       \
-        type != SymbolType::Bool) {                                         \
+#define CheckTypeIsPointerCompatible(type, message, loc)                    \
+    if (type.base != BaseSymbolType::Uint8  &&                              \
+        type.base != BaseSymbolType::Uint16 &&                              \
+        type.base != BaseSymbolType::Uint32 &&                              \
+        type.base != BaseSymbolType::Bool) {                                \
         throw CompilerException(CompilerExceptionSource::Statement,         \
             message, loc.first_line, loc.first_column);                     \
     }
 
 #define CheckIsInt(exp, message, loc)                                       \
-    if (exp.type != SymbolType::Uint8  &&                                   \
-        exp.type != SymbolType::Uint16 &&                                   \
-        exp.type != SymbolType::Uint32) {                                   \
+    if (exp.type.base != BaseSymbolType::Uint8  &&                          \
+        exp.type.base != BaseSymbolType::Uint16 &&                          \
+        exp.type.base != BaseSymbolType::Uint32) {                          \
         throw CompilerException(CompilerExceptionSource::Statement,         \
             message, loc.first_line, loc.first_column);                     \
     }   
 
 #define CheckIsBool(exp, message, loc)                                      \
-    if (exp.type != SymbolType::Bool) {                                     \
+    if (exp.type.base != BaseSymbolType::Bool) {                            \
         throw CompilerException(CompilerExceptionSource::Statement,         \
             message, loc.first_line, loc.first_column);                     \
     } 
 
 #define CheckIsIntOrBool(exp, message, loc)                                 \
-    if (exp.type != SymbolType::Uint8  &&                                   \
-        exp.type != SymbolType::Uint16 &&                                   \
-        exp.type != SymbolType::Uint32 &&                                   \
-        exp.type != SymbolType::Bool) {                                     \
+    if (exp.type.base != BaseSymbolType::Uint8  &&                          \
+        exp.type.base != BaseSymbolType::Uint16 &&                          \
+        exp.type.base != BaseSymbolType::Uint32 &&                          \
+        exp.type.base != BaseSymbolType::Bool) {                            \
         throw CompilerException(CompilerExceptionSource::Statement,         \
             message, loc.first_line, loc.first_column);                     \
     }
@@ -95,12 +94,12 @@
         CopyOperand(i->assignment.op2, op2_);                               \
     }
 
-#define CreateIfWithBackpatch(backpatch, compare_type, op1_, op2_)              \
-    {                                                                           \
+#define CreateIfWithBackpatch(backpatch, compare_type, op1_, op2_)          \
+    {                                                                       \
         backpatch = c.AddToStreamWithBackpatch(InstructionType::If, output_buffer); \
-        backpatch->entry->if_statement.type = compare_type;                     \
-        CopyOperand(backpatch->entry->if_statement.op1, op1_);                  \
-        CopyOperand(backpatch->entry->if_statement.op2, op2_);                  \
+        backpatch->entry->if_statement.type = compare_type;                 \
+        CopyOperand(backpatch->entry->if_statement.op1, op1_);              \
+        CopyOperand(backpatch->entry->if_statement.op2, op2_);              \
     }
 
 #define CreateIfConstWithBackpatch(backpatch, compare_type, op1_, constant)     \
@@ -115,7 +114,13 @@
 
 #define PrepareIndexedVariableIfNeeded(var)                                     \
     if (var.exp_type == ExpressionType::Variable && var.index.value) {          \
-        SymbolTableEntry* _decl_index = c.GetUnusedVariable(var.type);          \
+        if (var.type.pointer == 0) {                                            \
+            ThrowOnUnreachableCode();                                           \
+        }                                                                       \
+                                                                                \
+        SymbolType _resolved_type = var.type;                                   \
+        _resolved_type.pointer--;                                               \
+        SymbolTableEntry* _decl_index = c.GetUnusedVariable(_resolved_type);    \
                                                                                 \
         sprintf_s(output_buffer, "%s = %s[%s]", _decl_index->name, var.value, var.index.value); \
         InstructionEntry* _i = c.AddToStream(InstructionType::Assign, output_buffer);           \
@@ -123,7 +128,7 @@
         CopyOperand(_i->assignment.op1, var);                                   \
                                                                                 \
         var.value = _decl_index->name;                                          \
-        var.type = _decl_index->type;                                           \
+        var.type = _resolved_type;                                              \
         var.exp_type = ExpressionType::Variable;                                \
     }
 
@@ -145,19 +150,19 @@
 
 #define PrepareExpressionsForLogical(exp1, marker, exp2)                        \
     {                                                                           \
-        if (exp1.type != SymbolType::Bool) {                                    \
-                sprintf_s(output_buffer, "if (%s != 0) goto", exp1.value);      \
-                CreateIfConstWithBackpatch(exp1.true_list, CompareType::NotEqual, exp1, "0");       \
-                sprintf_s(output_buffer, "goto");                               \
-                exp1.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer); \
+        if (exp1.type.base != BaseSymbolType::Bool) {                           \
+            sprintf_s(output_buffer, "if (%s != 0) goto", exp1.value);          \
+            CreateIfConstWithBackpatch(exp1.true_list, CompareType::NotEqual, exp1, "0");       \
+            sprintf_s(output_buffer, "goto");                                   \
+            exp1.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer); \
                                                                                 \
-                marker.ip += 2;                                                 \
+            marker.ip += 2;                                                     \
         }                                                                       \
-        if (exp2.type != SymbolType::Bool) {                                    \
-                sprintf_s(output_buffer, "if (%s != 0) goto", exp2.value);      \
-                CreateIfConstWithBackpatch(exp2.true_list, CompareType::NotEqual, exp2, "0");       \
-                sprintf_s(output_buffer, "goto");                               \
-                exp2.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer); \
+        if (exp2.type.base != BaseSymbolType::Bool) {                           \
+            sprintf_s(output_buffer, "if (%s != 0) goto", exp2.value);          \
+            CreateIfConstWithBackpatch(exp2.true_list, CompareType::NotEqual, exp2, "0");       \
+            sprintf_s(output_buffer, "goto");                                   \
+            exp2.false_list = c.AddToStreamWithBackpatch(InstructionType::Goto, output_buffer); \
         }                                                                       \
     }
 
@@ -171,7 +176,7 @@
             _i->assignment.type = AssignType::None;                             \
             _i->assignment.dst_value = exp.value;                               \
             _i->assignment.op1.value = _strdup("1");                            \
-            _i->assignment.op1.type = SymbolType::Bool;                         \
+            _i->assignment.op1.type = { BaseSymbolType::Bool, 0 };              \
             _i->assignment.op1.exp_type = ExpressionType::Constant;             \
         }                                                                       \
         _false_ip = c.NextIp();                                                 \
@@ -201,7 +206,7 @@
             _i->assignment.type = AssignType::None;                             \
             _i->assignment.dst_value = exp.value;                               \
             _i->assignment.op1.value = _strdup("1");                            \
-            _i->assignment.op1.type = SymbolType::Bool;                         \
+            _i->assignment.op1.type = { BaseSymbolType::Bool, 0 };              \
             _i->assignment.op1.exp_type = ExpressionType::Constant;             \
         }                                                                       \
         _false_ip = c.NextIp();                                                 \
@@ -223,14 +228,14 @@
     SymbolTableEntry* _decl_if = nullptr;                                       \
     {                                                                           \
         if (c.IsScopeActive(ScopeType::Assign)) {                               \
-            _decl_if = c.GetUnusedVariable(SymbolType::Bool);                   \
+            _decl_if = c.GetUnusedVariable({ BaseSymbolType::Bool, 0 });        \
                                                                                 \
             sprintf_s(output_buffer, "%s = 0", _decl_if->name);                 \
             InstructionEntry* _i = c.AddToStream(InstructionType::Assign, output_buffer);   \
             _i->assignment.type = AssignType::None;                             \
             _i->assignment.dst_value = _decl_if->name;                          \
             _i->assignment.op1.value = _strdup("0");                            \
-            _i->assignment.op1.type = SymbolType::Bool;                         \
+            _i->assignment.op1.type = { BaseSymbolType::Bool, 0 };              \
             _i->assignment.op1.exp_type = ExpressionType::Constant;             \
         }                                                                       \
     }
@@ -239,14 +244,14 @@
     SymbolTableEntry* _decl_if = nullptr;                                       \
     {                                                                           \
         if (c.IsScopeActive(ScopeType::Assign)) {                               \
-            _decl_if = c.GetUnusedVariable(SymbolType::Bool);                   \
+            _decl_if = c.GetUnusedVariable({ BaseSymbolType::Bool, 0 });        \
                                                                                 \
             sprintf_s(output_buffer, "%s = 0", _decl_if->name);                 \
             InstructionEntry* _i = c.AddToStream(InstructionType::Assign, output_buffer);   \
             _i->assignment.type = AssignType::None;                             \
             _i->assignment.dst_value = _decl_if->name;                          \
             _i->assignment.op1.value = _strdup("0");                            \
-            _i->assignment.op1.type = SymbolType::Bool;                         \
+            _i->assignment.op1.type = { BaseSymbolType::Bool, 0 };              \
             _i->assignment.op1.exp_type = ExpressionType::Constant;             \
                                                                                 \
             marker.ip += 1;                                                     \
@@ -264,7 +269,7 @@
             res.exp_type = exp.exp_type;                                        \
         }                                                                       \
                                                                                 \
-        res.type = SymbolType::Bool;                                            \
+        res.type = { BaseSymbolType::Bool, 0 };                                 \
         res.index.value = nullptr;                                              \
     }
 
@@ -294,8 +299,8 @@ public:
 
     void AddLabel(const char* name, int32_t ip);
     void AddStaticVariable(SymbolType type, int32_t size, const char* name);
-    void AddFunction(char* name, ReturnSymbolType return_type);
-    void AddFunctionPrototype(char* name, ReturnSymbolType return_type);
+    void AddFunction(char* name, SymbolType return_type);
+    void AddFunctionPrototype(char* name, SymbolType return_type);
 
     void PrepareForCall(const char* name, SymbolTableEntry* call_parameters, int32_t parameter_count);
 
@@ -323,8 +328,9 @@ public:
 
     SymbolTableEntry* GetUnusedVariable(SymbolType type);
 
-    int32_t GetSymbolTypeSize(SymbolType type, bool is_pointer);
-    SymbolType ReturnSymbolTypeToSymbolType(ReturnSymbolType type);
+    int32_t GetSymbolTypeSize(SymbolType type);
+
+    int8_t SizeToShift(int32_t size);
 
     void IncreaseScope(ScopeType type);
     void ResetScope(ScopeType type);
@@ -332,12 +338,11 @@ public:
     void BackpatchScope(ScopeType type, int32_t new_ip);
     bool AddToScopeList(ScopeType type, BackpatchList* backpatch);
 
-    const char* SymbolTypeToString(SymbolType type);
-    const char* ReturnSymbolTypeToString(ReturnSymbolType type);
+    const char* BaseSymbolTypeToString(BaseSymbolType type);
 
 private:
-    SymbolTableEntry* AddSymbol(const char* name, SymbolType type, int32_t size, ReturnSymbolType return_type,
-        ExpressionType exp_type, int32_t ip, int32_t offset_or_size, int32_t parameter, const char* parent, bool is_temp);
+    SymbolTableEntry* AddSymbol(const char* name, SymbolType type, int32_t size, SymbolType return_type,
+        ExpressionType exp_type, int32_t ip, int32_t parameter, const char* parent, bool is_temp);
 
     const char* ExpressionTypeToString(ExpressionType type);
 
@@ -358,9 +363,6 @@ private:
 
     int32_t current_ip = -1;
     int32_t function_ip = 0;
-
-    uint32_t offset_function = 0;
-    uint32_t offset_global = 0;
 
     uint16_t parameter_count = 0;
 

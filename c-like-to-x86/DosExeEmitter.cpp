@@ -150,7 +150,7 @@ void DosExeEmitter::EmitSharedFunctions()
         SymbolTableEntry* current = symbol_table;
 
         while (current) {
-            if (current->type == SymbolType::SharedFunction && current->ip > 0) {
+            if (current->type.base == BaseSymbolType::SharedFunction && current->ref_count > 0) {
                 // Process only referenced shared functions
                 if (strcmp(current->name, "PrintUint32") == 0  ||
                     strcmp(current->name, "PrintNewLine") == 0 ||
@@ -680,6 +680,216 @@ void DosExeEmitter::EmitSharedFunctions()
         *(uint16_t*)(ret + 1) = 4;
     });
 
+    // ToDo: Release allocated block on failure
+    EmitSharedFunction("#Alloc", [&]() {
+        //   Create new call frame
+        uint8_t* l1 = AllocateBufferForInstruction(2 + 3);
+        l1[0] = 0x66;                           // Operand size prefix
+        l1[1] = ToOpR(0x50, CpuRegister::BP);   // push ebp
+        l1[2] = 0x66;                           // Operand size prefix
+        l1[3] = 0x8B;                           // mov r32 (ebp), rm32 (esp)
+        l1[4] = ToXrm(3, CpuRegister::BP, CpuRegister::SP);
+
+        //   mov ebx, ss:[bp + 6]
+        uint8_t* l2 = AllocateBufferForInstruction(4);
+        l2[0] = 0x66;   // Operand size prefix
+        l2[1] = 0x8B;   // mov r16, rm16
+        l2[2] = ToXrm(1, CpuRegister::BX, 6);
+        l2[3] = (int8_t)6;
+
+        //   or bx, bx
+        uint8_t* l3 = AllocateBufferForInstruction(2);
+        l3[0] = 0x0B;   // or r16, rm16
+        l3[1] = ToXrm(3, CpuRegister::BX, CpuRegister::BX);
+
+        //   jz [ret_null]
+        uint8_t* l4 = AllocateBufferForInstruction(2);
+        l4[0] = 0x74;   // jz rel8
+
+        uint32_t l4_ip = ip_dst;
+        uint32_t l4_offset = (l4 + 1) - buffer;
+
+        // Cannot allocate more than 65k bytes
+        //   test ebx, FFFF0000h
+        uint8_t* l5 = AllocateBufferForInstruction(3 + 4);
+        l5[0] = 0x66;   // Operand size prefix
+        l5[1] = 0xF7;   // test rm32, imm32
+        l5[2] = ToXrm(3, 0, CpuRegister::BX);
+        *(uint32_t*)(l5 + 3) = 0xffff0000;
+
+        //   jnz [ret_null]
+        uint8_t* l6 = AllocateBufferForInstruction(2);
+        l6[0] = 0x75;   // jnz rel8
+
+        uint32_t l6_ip = ip_dst;
+        uint32_t l6_offset = (l6 + 1) - buffer;
+
+        // Convert bytes to paragraphs with round up
+        //   add bx, 15
+        uint8_t* l7 = AllocateBufferForInstruction(2 + 2);
+        l7[0] = 0x81;  // add rm16, imm16
+        l7[1] = ToXrm(3, 0, CpuRegister::BX);
+        *(uint16_t*)(l7 + 2) = 15;
+
+        //   shr bx, 4
+        uint8_t* l8 = AllocateBufferForInstruction(3);
+        l8[0] = 0xC1;  // shr rm16, imm8
+        l8[1] = ToXrm(3, 5, CpuRegister::BX);
+        l8[2] = 4;
+
+        // Call DOS Function Dispatcher
+        //   int 21h
+        uint8_t* l9 = AllocateBufferForInstruction(4);
+        l9[0] = 0xB4;   // mov ah, imm8
+        l9[1] = 0x48;   //  Allocate memory
+        l9[2] = 0xCD;   // int imm8
+        l9[3] = 0x21;   //  DOS Function Dispatcher
+
+        // Allocation failed
+        //   jb/jc [ret_null]
+        uint8_t* l10 = AllocateBufferForInstruction(2);
+        l10[0] = 0x72;  // jc rel8
+
+        uint32_t l10_ip = ip_dst;
+        uint32_t l10_offset = (l10 + 1) - buffer;
+
+        // Check for 16-bit segment overflow
+        //   test ax, F000h
+        uint8_t* l11 = AllocateBufferForInstruction(2 + 2);
+        l11[0] = 0xF7;  // test rm16, imm16
+        l11[1] = ToXrm(3, 0, CpuRegister::AX);
+        *(uint16_t*)(l11 + 2) = 0xf000;
+
+        //   jnz [ret_null]
+        uint8_t* l12 = AllocateBufferForInstruction(2);
+        l12[0] = 0x75;  // jnz rel8
+
+        uint32_t l12_ip = ip_dst;
+        uint32_t l12_offset = (l12 + 1) - buffer;
+
+        //   mov bx, ds
+        uint8_t* l13 = AllocateBufferForInstruction(2);
+        l13[0] = 0x8C;  // mov r16, sreg
+        l13[1] = ToXrm(3, CpuSegment::DS, CpuRegister::BX);
+
+        //   sub ax, bx
+        uint8_t* l14 = AllocateBufferForInstruction(2);
+        l14[0] = 0x2B;  // sub r16, rm16
+        l14[1] = ToXrm(3, CpuRegister::AX, CpuRegister::BX);
+
+        // Segment too far to use
+        //   jb [ret_null]
+        uint8_t* l15 = AllocateBufferForInstruction(2);
+        l15[0] = 0x72;  // jb rel8
+
+        uint32_t l15_ip = ip_dst;
+        uint32_t l15_offset = (l15 + 1) - buffer;
+
+        // Convert segment to pointer
+        //   shl ax, 4
+        uint8_t* l16 = AllocateBufferForInstruction(3);
+        l16[0] = 0xC1;  // shl rm16, imm8
+        l16[1] = ToXrm(3, 4, CpuRegister::AX);
+        l16[2] = 4;
+
+        //   jmp [ret_ptr]
+        uint8_t* l17 = AllocateBufferForInstruction(2);
+        l17[0] = 0xEB;  // jmp rel8
+
+        uint32_t l17_ip = ip_dst;
+        uint32_t l17_offset = (l17 + 1) - buffer;
+
+        // ret_null:
+        uint32_t ret_null = ip_dst;
+        *(buffer + l4_offset) = (int8_t)(ret_null - l4_ip);
+        *(buffer + l6_offset) = (int8_t)(ret_null - l6_ip);
+        *(buffer + l10_offset) = (int8_t)(ret_null - l10_ip);
+        *(buffer + l12_offset) = (int8_t)(ret_null - l12_ip);
+        *(buffer + l15_offset) = (int8_t)(ret_null - l15_ip);
+
+        //   xor ax, ax
+        ZeroRegister(CpuRegister::AX, 2);
+
+        // ret_ptr:
+        uint32_t ret_ptr = ip_dst;
+        *(buffer + l17_offset) = (int8_t)(ret_ptr - l17_ip);
+
+        //   Destroy current call frame
+        uint8_t* l18 = AllocateBufferForInstruction(2);
+        l18[0] = 0x66;                          // Operand size prefix
+        l18[1] = ToOpR(0x58, CpuRegister::BP);  // pop ebp
+
+        //   retn 2
+        uint8_t* ret = AllocateBufferForInstruction(3);
+        ret[0] = 0xC2;
+        *(uint16_t*)(ret + 1) = 2;
+    });
+
+    EmitSharedFunction("release", [&]() {
+        //   Create new call frame
+        uint8_t* l1 = AllocateBufferForInstruction(2 + 3);
+        l1[0] = 0x66;                           // Operand size prefix
+        l1[1] = ToOpR(0x50, CpuRegister::BP);   // push ebp
+        l1[2] = 0x66;                           // Operand size prefix
+        l1[3] = 0x8B;                           // mov r32 (ebp), rm32 (esp)
+        l1[4] = ToXrm(3, CpuRegister::BP, CpuRegister::SP);
+
+        //   mov ax, ss:[bp + 6]
+        uint8_t* l2 = AllocateBufferForInstruction(3);
+        l2[0] = 0x8B;   // mov r16, rm16
+        l2[1] = ToXrm(1, CpuRegister::BX, 6);
+        l2[2] = (int8_t)6;
+
+        // Convert pointer to segment
+        //   shr ax, 4
+        uint8_t* l3 = AllocateBufferForInstruction(3);
+        l3[0] = 0xC1;  // shr rm16, imm8
+        l3[1] = ToXrm(3, 5, CpuRegister::AX);
+        l3[2] = 4;
+
+        //   mov bx, ds
+        uint8_t* l5 = AllocateBufferForInstruction(2);
+        l5[0] = 0x8C;   // mov r16, sreg
+        l5[1] = ToXrm(3, CpuSegment::DS, CpuRegister::BX);
+
+        //   add ax, bx
+        uint8_t* l6 = AllocateBufferForInstruction(2);
+        l6[0] = 0x03;  // add r16, rm16
+        l6[1] = ToXrm(3, CpuRegister::AX, CpuRegister::BX);
+
+        //   mov es, ax
+        uint8_t* l7 = AllocateBufferForInstruction(2);
+        l7[0] = 0x8E;   // mov sreg, r16
+        l7[1] = ToXrm(3, CpuSegment::ES, CpuRegister::AX);
+
+        // Call DOS Function Dispatcher
+        //   int 21h
+        uint8_t* l8 = AllocateBufferForInstruction(4);
+        l8[0] = 0xB4;   // mov ah, imm8
+        l8[1] = 0x49;   //  Free Allocated Memory
+        l8[2] = 0xCD;   // int imm8
+        l8[3] = 0x21;   //  DOS Function Dispatcher
+
+        // Restore ES segment
+        //   mov es, bx
+        uint8_t* l9 = AllocateBufferForInstruction(2);
+        l9[0] = 0x8E;   // mov sreg, r16
+        l9[1] = ToXrm(3, CpuSegment::ES, CpuRegister::BX);
+
+        //uint32_t end = ip_dst;
+        //*(buffer + l4_offset) = (int8_t)(ret_null - l4_ip);
+
+        //   Destroy current call frame
+        uint8_t* l10 = AllocateBufferForInstruction(2);
+        l10[0] = 0x66;                          // Operand size prefix
+        l10[1] = ToOpR(0x58, CpuRegister::BP);  // pop ebp
+
+        //   retn 2
+        uint8_t* ret = AllocateBufferForInstruction(3);
+        ret[0] = 0xC2;
+        *(uint16_t*)(ret + 1) = 2;
+    });
+
     Log::PopIndent();
 }
 
@@ -707,7 +917,7 @@ void DosExeEmitter::EmitStaticData()
 
         while (it != variables.end()) {
             if (!it->symbol->parent) {
-                uint32_t var_size = compiler->GetSymbolTypeSize(it->symbol->type, it->symbol->size == IsPointer);
+                uint32_t var_size = compiler->GetSymbolTypeSize(it->symbol->type);
                 if (it->symbol->size > 0) {
                     var_size *= it->symbol->size;
                 }
@@ -748,14 +958,14 @@ void DosExeEmitter::FixMzHeader(InstructionEntry* instruction_stream, uint32_t s
     Log::Write(LogType::Verbose, "Stack size: %d bytes", header->sp);
     Log::Write(LogType::Verbose, "Stack segment: 0x%04x", header->ss);
 
+    // Compute additional memory needed
+    header->min_extra_paragraphs = ((static_size + header->sp + 16 - 1) >> 4) + 1;
+    header->max_extra_paragraphs = header->min_extra_paragraphs;
+
     // Adjust SP for flat memory model
     header->sp += (header->ss << 4);
     header->sp += 0x0100; // Program Segment Prefix
     header->ss = 0;
-
-    // Compute additional memory needed
-    header->min_extra_paragraphs = ((static_size + header->sp + 16 - 1) >> 4) + 1;
-    header->max_extra_paragraphs = header->min_extra_paragraphs;
 
     // Adjust start IP
     if (instruction_stream && instruction_stream->type == InstructionType::Goto) {
@@ -924,7 +1134,10 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
                      strcmp(var->symbol->name, current->assignment.op1.value) == 0) ||
                     (current->assignment.op2.exp_type == ExpressionType::Variable &&
                      current->assignment.op2.value &&
-                     strcmp(var->symbol->name, current->assignment.op2.value) == 0)) {
+                     strcmp(var->symbol->name, current->assignment.op2.value) == 0) ||
+                    (current->assignment.dst_index.value &&
+                     (strcmp(var->symbol->name, current->assignment.dst_value) == 0 ||
+                      strcmp(var->symbol->name, current->assignment.dst_index.value) == 0))) {
 
                     return current;
                 }
@@ -1011,7 +1224,7 @@ void DosExeEmitter::RefreshParentEndIp(SymbolTableEntry* symbol_table)
         SymbolTableEntry* symbol = symbol_table;
 
         while (symbol) {
-            if (symbol->ip == ip + 1 && (symbol->type == SymbolType::EntryPoint || symbol->type == SymbolType::Function)) {
+            if (symbol->ip == ip + 1 && (symbol->type.base == BaseSymbolType::EntryPoint || symbol->type.base == BaseSymbolType::Function)) {
                 parent_end_ip = ip;
                 return;
             }
@@ -1036,7 +1249,7 @@ void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, bool force)
         return;
     }
 
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, var->symbol->size == IsPointer);
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
 
     if (var->symbol->parent) {
         if (!force && !FindNextVariableReference(var)) {
@@ -1119,15 +1332,17 @@ void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, bool force)
 
 void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, CpuRegister reg_dst)
 {
-    if (var->symbol->size == 0) {
+    if (var->symbol->type.pointer == 0) {
         ThrowOnUnreachableCode();
     }
 
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, false);
+    SymbolType resolved_type = var->symbol->type;
+    resolved_type.pointer--;
+    int32_t resolved_size = compiler->GetSymbolTypeSize(resolved_type);
 
     switch (index.exp_type) {
         case ExpressionType::Constant: {
-            int32_t value = atoi(index.value) * var_size;
+            int32_t value = atoi(index.value) * resolved_size;
             LoadConstantToRegister(value, CpuRegister::DI, 2);
             break;
         }
@@ -1136,7 +1351,7 @@ void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionO
             CopyVariableToRegister(index_desc, CpuRegister::DI, 2);
 
             // Multiply by size
-            uint8_t shift = SizeToShift(var_size);
+            uint8_t shift = compiler->SizeToShift(resolved_size);
             if (shift > 0) {
                 uint8_t* a = AllocateBufferForInstruction(2 + 1);
                 a[0] = 0xC1;    // shl rm16, imm8
@@ -1149,17 +1364,46 @@ void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionO
         default: ThrowOnUnreachableCode();
     }
 
-    switch (var_size) {
+    if (var->symbol->size == 0) {
+        // Only pointer - it's stored somewhere else
+        if (var->reg != CpuRegister::None) {
+            // Pointer is already loaded in register
+            uint8_t* a = AllocateBufferForInstruction(2);
+            a[0] = 0x03;    // add r16, rm16
+            a[1] = ToXrm(3, CpuRegister::DI, var->reg);
+        } else if (!var->symbol->parent) {
+            // Pointer is in static (16-bit range)
+            uint8_t* a = AllocateBufferForInstruction(2 + 2);
+            a[0] = 0x03;   // add r16, rm16
+            a[1] = ToXrm(0, CpuRegister::DI, 6);
+
+            BackpatchStatic(a + 2, var);
+        } else {
+            // Pointer is in stack (8-bit range)
+            uint8_t* a = AllocateBufferForInstruction(2 + 1);
+            a[0] = 0x03;   // add r16, rm16
+            a[1] = ToXrm(1, CpuRegister::DI, 6);
+
+            BackpatchLocal(a + 2, var);
+        }
+    }
+
+    switch (resolved_size) {
         case 1: {
-            if (!var->symbol->parent) {
-                // Static push (16-bit range)
+            if (var->symbol->size == 0) {
+                // Register to pointer (16-bit)
+                uint8_t* a = AllocateBufferForInstruction(2);
+                a[0] = 0x88;   // mov rm8, r8
+                a[1] = ToXrm(0, reg_dst, 4);
+            } else if (!var->symbol->parent) {
+                // Register to static (16-bit range)
                 uint8_t* a = AllocateBufferForInstruction(2 + 2);
                 a[0] = 0x88;   // mov rm8, r8
                 a[1] = ToXrm(2, reg_dst, 5);
 
                 BackpatchStatic(a + 2, var);
             } else {
-                // Stack to register copy (8-bit range)
+                // Register to stack (8-bit range)
                 uint8_t* a = AllocateBufferForInstruction(2 + 1);
                 a[0] = 0x88;   // mov rm8, r8
                 a[1] = ToXrm(1, reg_dst, 3);
@@ -1169,15 +1413,20 @@ void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionO
             break;
         }
         case 2: {
-            if (!var->symbol->parent) {
-                // Static push (16-bit range)
+            if (var->symbol->size == 0) {
+                // Register to pointer (16-bit)
+                uint8_t* a = AllocateBufferForInstruction(2);
+                a[0] = 0x89;   // mov rm16, r16
+                a[1] = ToXrm(0, reg_dst, 4);
+            } else if (!var->symbol->parent) {
+                // Register to static (16-bit range)
                 uint8_t* a = AllocateBufferForInstruction(2 + 2);
                 a[0] = 0x89;   // mov rm16, r16
                 a[1] = ToXrm(2, reg_dst, 5);
 
                 BackpatchStatic(a + 2, var);
             } else {
-                // Stack to register copy (8-bit range)
+                // Register to stack (8-bit range)
                 uint8_t* a = AllocateBufferForInstruction(2 + 1);
                 a[0] = 0x89;   // mov rm16, r16
                 a[1] = ToXrm(1, reg_dst, 3);
@@ -1187,8 +1436,14 @@ void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionO
             break;
         }
         case 4: {
-            if (!var->symbol->parent) {
-                // Static push (16-bit range)
+            if (var->symbol->size == 0) {
+                // Register to pointer (16-bit)
+                uint8_t* a = AllocateBufferForInstruction(3);
+                a[0] = 0x66;   // Operand size prefix
+                a[1] = 0x89;   // mov rm32, r32
+                a[2] = ToXrm(0, reg_dst, 4);
+            } else if (!var->symbol->parent) {
+                // Register to static (16-bit range)
                 uint8_t* a = AllocateBufferForInstruction(3 + 2);
                 a[0] = 0x66;   // Operand size prefix
                 a[1] = 0x89;   // mov rm32, r32
@@ -1196,7 +1451,7 @@ void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionO
 
                 BackpatchStatic(a + 3, var);
             } else {
-                // Stack to register copy (8-bit range)
+                // Register to stack (8-bit range)
                 uint8_t* a = AllocateBufferForInstruction(3 + 1);
                 a[0] = 0x66;   // Operand size prefix
                 a[1] = 0x89;   // mov rm32, r32
@@ -1260,7 +1515,7 @@ void DosExeEmitter::MarkRegisterAsDiscarded(CpuRegister reg)
 
 void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, int32_t param_size)
 {
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, var->symbol->size == IsPointer);
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
 
     if (var_size < param_size) {
         // Variable expansion is needed
@@ -1399,7 +1654,6 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, int32_t para
 CpuRegister DosExeEmitter::LoadVariableUnreferenced(DosVariableDescriptor* var, int32_t desired_size)
 {
     if (var->symbol->size > 0) {
-        //ThrowOnUnreachableCode();
         // ToDo
         if (desired_size != 2) {
             ThrowOnUnreachableCode();
@@ -1408,7 +1662,7 @@ CpuRegister DosExeEmitter::LoadVariableUnreferenced(DosVariableDescriptor* var, 
         return LoadVariablePointer(var);
     }
 
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, var->symbol->size == IsPointer);
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
 
     CpuRegister reg_dst;
     if (var->reg == CpuRegister::None) {
@@ -1433,15 +1687,10 @@ CpuRegister DosExeEmitter::LoadVariableUnreferenced(DosVariableDescriptor* var, 
 
 CpuRegister DosExeEmitter::LoadVariablePointer(DosVariableDescriptor* var)
 {
-    if (var->symbol->size == 0) {
-        // Standard variables cannot be referenced for now...
-        ThrowOnUnreachableCode();
-    }
-
     CpuRegister reg_dst = GetUnusedRegister();
 
     // Hardcoded 16-bit pointer size
-    if (var->symbol->size == IsPointer) { // It's already pointer
+    if (var->symbol->size == 0) { // It's already pointer
         return LoadVariableUnreferenced(var, 2);
     }
     
@@ -1463,15 +1712,17 @@ CpuRegister DosExeEmitter::LoadVariablePointer(DosVariableDescriptor* var)
 
 CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size)
 {
-    if (var->symbol->size == 0) {
+    if (var->symbol->type.pointer == 0) {
         ThrowOnUnreachableCode();
     }
 
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, false);
+    SymbolType resolved_type = var->symbol->type;
+    resolved_type.pointer--;
+    int32_t resolved_size = compiler->GetSymbolTypeSize(resolved_type);
 
     switch (index.exp_type) {
         case ExpressionType::Constant: {
-            int32_t value = atoi(index.value) * var_size;
+            int32_t value = atoi(index.value) * resolved_size;
             LoadConstantToRegister(value, CpuRegister::SI, 2);
             break;
         }
@@ -1480,7 +1731,7 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
             CopyVariableToRegister(index_desc, CpuRegister::SI, 2);
 
             // Multiply by size
-            uint8_t shift = SizeToShift(var_size);
+            uint8_t shift = compiler->SizeToShift(resolved_size);
             if (shift > 0) {
                 uint8_t* a = AllocateBufferForInstruction(2 + 1);
                 a[0] = 0xC1;    // shl rm16, imm8
@@ -1493,7 +1744,7 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
         default: ThrowOnUnreachableCode();
     }
 
-    if (var->symbol->size == IsPointer) {
+    if (var->symbol->size == 0) {
         if (var->reg != CpuRegister::None) {
             // Pointer is already loaded in register
             uint8_t* a = AllocateBufferForInstruction(2);
@@ -1503,14 +1754,14 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
             // Pointer is in static (16-bit range)
             uint8_t* a = AllocateBufferForInstruction(2 + 2);
             a[0] = 0x03;   // add r16, rm16
-            a[1] = ToXrm(2, CpuRegister::SI, 4);
+            a[1] = ToXrm(0, CpuRegister::SI, 6);
 
             BackpatchStatic(a + 2, var);
         } else {
             // Pointer is in stack (8-bit range)
             uint8_t* a = AllocateBufferForInstruction(2 + 1);
             a[0] = 0x03;   // add r16, rm16
-            a[1] = ToXrm(1, CpuRegister::SI, 2);
+            a[1] = ToXrm(1, CpuRegister::SI, 6);
 
             BackpatchLocal(a + 2, var);
         }
@@ -1518,10 +1769,10 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
 
     CpuRegister reg_dst = GetUnusedRegister();
 
-    switch (var_size) {
+    switch (resolved_size) {
         case 1: {
             if (desired_size == 4) {
-                if (var->symbol->size == IsPointer) {
+                if (var->symbol->size == 0) {
                     // Pointer to register (16-bit)
                     uint8_t* a = AllocateBufferForInstruction(4);
                     a[0] = 0x66;    // Operand size prefix
@@ -1548,7 +1799,7 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
                     BackpatchLocal(a + 4, var);
                 }
             } else if (desired_size == 2) {
-                if (var->symbol->size == IsPointer) {
+                if (var->symbol->size == 0) {
                     // Pointer to register (16-bit)
                     uint8_t* a = AllocateBufferForInstruction(3);
                     a[0] = 0x0F;
@@ -1572,7 +1823,7 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
                     BackpatchLocal(a + 3, var);
                 }
             } else {
-                if (var->symbol->size == IsPointer) {
+                if (var->symbol->size == 0) {
                     // Pointer to register (16-bit)
                     uint8_t* a = AllocateBufferForInstruction(2);
                     a[0] = 0x8A;   // mov r8, rm8
@@ -1597,7 +1848,7 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
         }
         case 2: {
             if (desired_size == 4) {
-                if (var->symbol->size == IsPointer) {
+                if (var->symbol->size == 0) {
                     // Pointer to register (16-bit)
                     uint8_t* a = AllocateBufferForInstruction(3);
                     a[0] = 0x0F;
@@ -1621,7 +1872,7 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
                     BackpatchLocal(a + 3, var);
                 }
             } else {
-                if (var->symbol->size == IsPointer) {
+                if (var->symbol->size == 0) {
                     // Pointer to register (16-bit)
                     uint8_t* a = AllocateBufferForInstruction(2);
                     a[0] = 0x8B;   // mov r16, rm16
@@ -1645,7 +1896,7 @@ CpuRegister DosExeEmitter::LoadIndexedVariable(DosVariableDescriptor* var, Instr
             break;
         }
         case 4: {
-            if (var->symbol->size == IsPointer) {
+            if (var->symbol->size == 0) {
                 // Pointer to register (16-bit)
                 uint8_t* a = AllocateBufferForInstruction(3);
                 a[0] = 0x66;   // Operand size prefix
@@ -1683,7 +1934,7 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
         ThrowOnUnreachableCode();
     }
 
-    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type, var->symbol->size == IsPointer);
+    int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
 
     if (var->reg != CpuRegister::None && (var_size >= desired_size || var->reg != reg_dst)) {
         // Variable is already in desired register with desired size
@@ -1719,10 +1970,11 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
             }
             case 2: {
                 if (desired_size == 4) {
-                    uint8_t* a = AllocateBufferForInstruction(3);
-                    a[0] = 0x0F;
-                    a[1] = 0xB7;    // movzx r32, rm16 (i386+)
-                    a[2] = ToXrm(3, reg_dst, var->reg);
+                    uint8_t* a = AllocateBufferForInstruction(4);
+                    a[0] = 0x66;    // Operand size prefix
+                    a[1] = 0x0F;
+                    a[2] = 0xB7;    // movzx r32, rm16 (i386+)
+                    a[3] = ToXrm(3, reg_dst, var->reg);
                 } else {
                     uint8_t* a = AllocateBufferForInstruction(2);
                     a[0] = 0x8B;   // mov r16, rm16
@@ -2040,15 +2292,11 @@ void DosExeEmitter::CheckBackpatchListIsEmpty(DosBackpatchTarget target)
             if (target == DosBackpatchTarget::Function) {
                 std::string message = "Function \"";
                 message += it->value;
-                message += "\" called from \"";
-                message += parent->name;
                 message += "\" could not be resolved";
                 throw CompilerException(CompilerExceptionSource::Statement, message);
             } else if (target == DosBackpatchTarget::String) {
-                std::string message = "Label \"";
+                std::string message = "String \"";
                 message += it->value;
-                message += "\" in function \"";
-                message += parent->name;
                 message += "\" could not be resolved";
                 throw CompilerException(CompilerExceptionSource::Statement, message);
             } else {
@@ -2063,7 +2311,7 @@ void DosExeEmitter::CheckBackpatchListIsEmpty(DosBackpatchTarget target)
 void DosExeEmitter::CheckReturnStatementPresent()
 {
     if (parent && !was_return) {
-        if (parent->return_type == ReturnSymbolType::Void) {
+        if (parent->return_type.base == BaseSymbolType::Void && parent->return_type.pointer == 0) {
             EmitReturn(nullptr, compiler->GetSymbols());
 
             // Adjust "ip_src_to_dst" mapping, because of unloaded registers
@@ -2085,7 +2333,7 @@ Retry:
 
     while (symbol) {
         if (symbol->ip == ip_src) {
-            if (symbol->type == SymbolType::EntryPoint) {
+            if (symbol->type.base == BaseSymbolType::EntryPoint) {
                 // Start of entry point
                 EmitFunctionEpilogue();
 
@@ -2096,7 +2344,7 @@ Retry:
                 Log::PopIndent();
                 Log::Write(LogType::Info, "Compiling entry point...");
                 Log::PushIndent();
-            } else if (symbol->type == SymbolType::Function) {
+            } else if (symbol->type.base == BaseSymbolType::Function) {
                 // Start of standard function
                 EmitFunctionEpilogue();
 
@@ -2114,7 +2362,7 @@ Retry:
                         symbol = symbol_table;
                         while (symbol) {
                             if (symbol->ip == ip_src &&
-                                (symbol->type == SymbolType::Function || symbol->type == SymbolType::EntryPoint)) {
+                                (symbol->type.base == BaseSymbolType::Function || symbol->type.base == BaseSymbolType::EntryPoint)) {
                                 goto CanContinue;
                             }
 
@@ -2139,7 +2387,7 @@ Retry:
                 Log::PopIndent();
                 Log::Write(LogType::Info, "Compiling function \"%s\"...", parent->name);
                 Log::PushIndent();
-            } else if (symbol->type == SymbolType::Label) {
+            } else if (symbol->type.base == BaseSymbolType::Label) {
                 // Label
 
                 // Unload all registers before label, so we can
@@ -2216,7 +2464,7 @@ void DosExeEmitter::EmitFunctionPrologue(SymbolTableEntry* function, SymbolTable
     while (it != variables.end()) {
         if (it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0) {
             if (it->symbol->parameter) { // Parameter
-                int32_t size = compiler->GetSymbolTypeSize(it->symbol->type, it->symbol->size == IsPointer);
+                int32_t size = compiler->GetSymbolTypeSize(it->symbol->type);
                 if (size < 2) { // Min. push size is 2 bytes
                     size = 2;
                 }
@@ -2257,7 +2505,7 @@ void DosExeEmitter::EmitFunctionEpilogue()
     while (it != variables.end()) {
         if (it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0) {
             if (!it->symbol->parameter) { // Local variable
-                int32_t size = compiler->GetSymbolTypeSize(it->symbol->type, it->symbol->size == IsPointer);
+                int32_t size = compiler->GetSymbolTypeSize(it->symbol->type);
                 if (it->symbol->size > 0) {
                     size *= it->symbol->size;
                 }
@@ -2339,9 +2587,10 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
 
     switch (i->assignment.op1.exp_type) {
         case ExpressionType::Constant: {
-            if (i->assignment.op1.type == SymbolType::String) {
+            CpuRegister reg_dst;
+            if (i->assignment.op1.type.base == BaseSymbolType::String) {
                 // Load string address to register
-                dst->reg = GetUnusedRegister();
+                reg_dst = GetUnusedRegister();
 
                 uint8_t* a = AllocateBufferForInstruction(1 + 2);
                 a[0] = ToOpR(0xB8, dst->reg);   // mov r16, imm16
@@ -2353,21 +2602,20 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
                 //var->value = i->assignment.op1_value;
 
                 // Load constant to register
-                CpuRegister reg_dst = GetUnusedRegister();
+                reg_dst = GetUnusedRegister();
 
                 int32_t value = atoi(i->assignment.op1.value);
 
-                int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
+                int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
                 LoadConstantToRegister(value, reg_dst, dst_size);
-
-                dst->reg = reg_dst;
             }
 
             if (i->assignment.dst_index.value) {
                 // Array values are not cached
-                SaveIndexedVariable(dst, i->assignment.dst_index, dst->reg);
+                SaveIndexedVariable(dst, i->assignment.dst_index, reg_dst);
                 dst->reg = CpuRegister::None;
             } else {
+                dst->reg = reg_dst;
                 dst->is_dirty = true;
                 dst->last_used = ip_src;
             }
@@ -2376,13 +2624,13 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
         case ExpressionType::Variable: {
             DosVariableDescriptor* op1 = FindVariableByName(i->assignment.op1.value);
 
-            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
-            int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
+            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
+            int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
 
             if (op1->symbol->exp_type == ExpressionType::Constant) {
                 dst->reg = GetUnusedRegister();
 
-                if (op1->symbol->type == SymbolType::String) {
+                if (op1->symbol->type.base == BaseSymbolType::String) {
                     ThrowOnUnreachableCode();
                     /*
                     // Load string address to register
@@ -2408,14 +2656,7 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
             } else if (i->assignment.op1.index.value) {
                 dst->reg = LoadIndexedVariable(op1, i->assignment.op1.index, dst_size);
             } else {
-                if (dst->symbol->size == IsPointer && op1->symbol->size > 0) {
-                    // Array reference is assigned to pointer
-                    //dst->reg = LoadVariablePointer(op1);
-                    // ToDo
-                    ThrowOnUnreachableCode();
-                } else {
-                    dst->reg = LoadVariableUnreferenced(op1, dst_size);
-                }
+                dst->reg = LoadVariableUnreferenced(op1, dst_size);
             }
 
             if (i->assignment.dst_index.value) {
@@ -2426,13 +2667,6 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
                 dst->is_dirty = true;
                 dst->last_used = ip_src;
             }
-            break;
-        }
-        case ExpressionType::VariablePointer: {
-            DosVariableDescriptor* op1 = FindVariableByName(i->assignment.op1.value);
-            dst->reg = LoadVariablePointer(op1);
-            dst->is_dirty = true;
-            dst->last_used = ip_src;
             break;
         }
 
@@ -2467,7 +2701,7 @@ void DosExeEmitter::EmitAssignNegation(InstructionEntry* i)
         reg_dst = GetUnusedRegister();
     }
 
-    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
+    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
 
     switch (i->assignment.op1.exp_type) {
         case ExpressionType::Constant: {
@@ -2517,7 +2751,7 @@ void DosExeEmitter::EmitAssignAddSubtract(InstructionEntry* i)
 {
     DosVariableDescriptor* dst = FindVariableByName(i->assignment.dst_value);
 
-    if (i->assignment.type == AssignType::Add && dst->symbol->type == SymbolType::String) {
+    if (i->assignment.type == AssignType::Add && dst->symbol->type.base == BaseSymbolType::String) {
         if (i->assignment.op1.exp_type == ExpressionType::Constant && i->assignment.op2.exp_type == ExpressionType::Constant) {
             size_t length1 = strlen(i->assignment.op1.value);
             size_t length2 = strlen(i->assignment.op2.value);
@@ -2558,7 +2792,7 @@ void DosExeEmitter::EmitAssignAddSubtract(InstructionEntry* i)
         constant_swapped = true;
     }
 
-    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
+    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
 
     if (i->assignment.op1.exp_type == ExpressionType::Constant) {
         // Both operands are constants
@@ -2613,7 +2847,7 @@ void DosExeEmitter::EmitAssignAddSubtract(InstructionEntry* i)
         }
         case ExpressionType::Variable: {
             DosVariableDescriptor* op2 = FindVariableByName(i->assignment.op2.value);
-            int32_t op2_size = compiler->GetSymbolTypeSize(op2->symbol->type, op2->symbol->size == IsPointer);
+            int32_t op2_size = compiler->GetSymbolTypeSize(op2->symbol->type);
 
             if (op2_size < dst_size) {
                 SuppressRegister _(this, reg_dst);
@@ -2714,7 +2948,7 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
 {
     DosVariableDescriptor* dst = FindVariableByName(i->assignment.dst_value);
 
-    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
+    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
 
     if (i->assignment.op1.exp_type == ExpressionType::Constant) {
         // Constant has to be second operand, swap them
@@ -2845,7 +3079,7 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
             // One operand is already in AX
             SuppressRegister _(this, CpuRegister::AX);
 
-            int32_t op2_size = compiler->GetSymbolTypeSize(op2->symbol->type, op2->symbol->size == IsPointer);
+            int32_t op2_size = compiler->GetSymbolTypeSize(op2->symbol->type);
             if (op2_size < dst_size) {
                 // Required size is higher than provided, unreference and expand it
                 op2->reg = LoadVariableUnreferenced(op2, dst_size);
@@ -2948,7 +3182,7 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
 {
     DosVariableDescriptor* dst = FindVariableByName(i->assignment.dst_value);
 
-    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
+    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
 
     switch (i->assignment.op1.exp_type) {
         case ExpressionType::Constant: {
@@ -3105,14 +3339,33 @@ void DosExeEmitter::EmitAssignShift(InstructionEntry* i)
 {
     DosVariableDescriptor* dst = FindVariableByName(i->assignment.dst_value);
 
-    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type, dst->symbol->size == IsPointer);
+    int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
 
     switch (i->assignment.op2.exp_type) {
         case ExpressionType::Constant: {
-            int32_t value = atoi(i->assignment.op2.value);
+            int32_t shift = atoi(i->assignment.op2.value);
+
+            if (i->assignment.op1.exp_type == ExpressionType::Constant) {
+                // Shift constant with constant
+                int32_t value = atoi(i->assignment.op1.value);
+
+                if (i->assignment.type == AssignType::ShiftLeft) {
+                    value = value << shift;
+                } else {
+                    value = value >> shift;
+                }
+
+                CpuRegister reg_dst = GetUnusedRegister();
+                LoadConstantToRegister(value, reg_dst, dst_size);
+
+                dst->reg = reg_dst;
+                dst->is_dirty = true;
+                dst->last_used = ip_src;
+                return;
+            }
 
             SaveAndUnloadRegister(CpuRegister::CL);
-            LoadConstantToRegister(value, CpuRegister::CL, 1);
+            LoadConstantToRegister(shift, CpuRegister::CL, 1);
             // ToDo: Use shl/shr rm8/16/32, imm8
             break;
         }
@@ -3139,7 +3392,7 @@ void DosExeEmitter::EmitAssignShift(InstructionEntry* i)
         }
         case ExpressionType::Variable: {
             DosVariableDescriptor* op1 = FindVariableByName(i->assignment.op1.value);
-            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
+            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
 
             if (dst == op1 && op1->reg != CpuRegister::None && dst_size <= op1_size) {
                 reg_dst = op1->reg;
@@ -3281,7 +3534,7 @@ void DosExeEmitter::EmitIf(InstructionEntry* i)
         i->if_statement.type = GetSwappedCompareType(i->if_statement.type);
     }
 
-    if (i->if_statement.op1.type == SymbolType::String || i->if_statement.op2.type == SymbolType::String) {
+    if (i->if_statement.op1.type.base == BaseSymbolType::String || i->if_statement.op2.type.base == BaseSymbolType::String) {
         EmitIfStrings(i, goto_ptr);
     } else {
         switch (i->if_statement.type) {
@@ -3347,7 +3600,7 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
                 case ExpressionType::Variable: {
                     DosVariableDescriptor* op1 = FindVariableByName(i->if_statement.op1.value);
 
-                    int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
+                    int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
 
                     int32_t value = atoi(i->if_statement.op2.value);
 
@@ -3400,7 +3653,7 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
                 std::swap(op1, op2);
             }
 
-            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
+            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
 
             CpuRegister reg_dst = LoadVariableUnreferenced(op1, op1_size);
 
@@ -3515,7 +3768,7 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
                 }
                 case ExpressionType::Variable: {
                     DosVariableDescriptor* op1 = FindVariableByName(i->if_statement.op1.value);
-                    int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
+                    int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
 
                     int32_t value = atoi(i->if_statement.op2.value);
 
@@ -3568,7 +3821,7 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
                 i->if_statement.type = GetSwappedCompareType(i->if_statement.type);
             }
 
-            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type, op1->symbol->size == IsPointer);
+            int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
 
             CpuRegister reg_dst = LoadVariableUnreferenced(op1, op1_size);
 
@@ -3709,16 +3962,16 @@ void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr)
         BackpatchString(a + 1, i->if_statement.op2.value);
     } else {
         DosVariableDescriptor* op2 = FindVariableByName(i->if_statement.op2.value);
-        PushVariableToStack(op2, compiler->GetSymbolTypeSize(SymbolType::String, false));
+        PushVariableToStack(op2, compiler->GetSymbolTypeSize({ BaseSymbolType::String, 0 }));
     }
 
     DosVariableDescriptor* op1 = FindVariableByName(i->if_statement.op1.value);
-    PushVariableToStack(op1, compiler->GetSymbolTypeSize(SymbolType::String, false));
+    PushVariableToStack(op1, compiler->GetSymbolTypeSize({ BaseSymbolType::String, 0 }));
 
     // IP of shared function means reference count
     SymbolTableEntry* symbol = compiler->GetSymbols();
     while (symbol) {
-        if (symbol->type == SymbolType::SharedFunction && strcmp(symbol->name, "#StringsEqual") == 0) {
+        if (symbol->type.base == BaseSymbolType::SharedFunction && strcmp(symbol->name, "#StringsEqual") == 0) {
             symbol->ip++;
             break;
         }
@@ -3802,9 +4055,9 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
             switch (push->push_statement.symbol->exp_type) {
                 case ExpressionType::Constant: {
                     // Push constant directly to parameter stack
-                    switch (param_decl->type) {
-                        case SymbolType::Bool:
-                        case SymbolType::Uint8: {
+                    switch (param_decl->type.base) {
+                        case BaseSymbolType::Bool:
+                        case BaseSymbolType::Uint8: {
                             uint8_t imm8 = atoi(push->push_statement.symbol->name);
 
                             uint8_t* a = AllocateBufferForInstruction(1 + 1);
@@ -3812,7 +4065,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
                             a[1] = imm8;
                             break;
                         }
-                        case SymbolType::Uint16: {
+                        case BaseSymbolType::Uint16: {
                             uint16_t imm16 = atoi(push->push_statement.symbol->name);
 
                             uint8_t* a = AllocateBufferForInstruction(1 + 2);
@@ -3820,7 +4073,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
                             *(uint16_t*)(a + 1) = imm16;
                             break;
                         }
-                        case SymbolType::Uint32: {
+                        case BaseSymbolType::Uint32: {
                             uint32_t imm32 = atoi(push->push_statement.symbol->name);
 
                             uint8_t* a = AllocateBufferForInstruction(2 + 4);
@@ -3830,7 +4083,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
                             break;
                         }
 
-                        case SymbolType::String: {
+                        case BaseSymbolType::String: {
                             strings.insert(push->push_statement.symbol->name);
 
                             uint8_t* a = AllocateBufferForInstruction(1 + 2);
@@ -3841,7 +4094,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
                             break;
                         }
 
-                        //case SymbolType::Array: break;
+                        //case BaseSymbolType::Array: break;
 
                         default: ThrowOnUnreachableCode();
                     }
@@ -3851,7 +4104,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
 
                 case ExpressionType::Variable: {
                     DosVariableDescriptor* var = FindVariableByName(push->push_statement.symbol->name);
-                    PushVariableToStack(var, compiler->GetSymbolTypeSize(param_decl->type, param_decl->size == IsPointer));
+                    PushVariableToStack(var, compiler->GetSymbolTypeSize(param_decl->type));
                     break;
                 }
 
@@ -3893,7 +4146,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
         ;
     }
 
-    if (i->call_statement.target->return_type != ReturnSymbolType::Void) {
+    if (i->call_statement.target->return_type.base != BaseSymbolType::Void || i->call_statement.target->return_type.pointer != 0) {
         // Set register of return variable to AX
         DosVariableDescriptor* ret = FindVariableByName(i->call_statement.return_symbol);
         ret->reg = CpuRegister::AX;
@@ -3904,26 +4157,24 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
 {
     was_return = true;
 
-    SymbolType return_type = compiler->ReturnSymbolTypeToSymbolType(parent->return_type);
-
-    bool are_types_compatible = (i->return_statement.op.type == return_type);
+    bool are_types_compatible = (i->return_statement.op.type == parent->return_type);
     if (!are_types_compatible) {
         are_types_compatible = compiler->GetLargestTypeForArithmetic(
-            i->return_statement.op.type, return_type) != SymbolType::Unknown;
+            i->return_statement.op.type, parent->return_type).base != BaseSymbolType::Unknown;
     }
 
     if (!are_types_compatible) {
         std::string message = "All returns in function \"";
         message += parent->name;
         message += "\" must return \"";
-        message += compiler->ReturnSymbolTypeToString(parent->return_type);
+        message += compiler->BaseSymbolTypeToString(parent->return_type.base);
         message += "\" value, found \"";
-        message += compiler->SymbolTypeToString(i->return_statement.op.type);
+        message += compiler->BaseSymbolTypeToString(i->return_statement.op.type.base);
         message += "\" instead";
         throw CompilerException(CompilerExceptionSource::Statement, message);
     }
 
-    if (parent->type == SymbolType::EntryPoint) {
+    if (parent->type.base == BaseSymbolType::EntryPoint) {
         // Entry point is handled differently,
         // DOS Function Dispatcher is caled at the end of the function,
         // return value is passed to DOS and the program is terminated
@@ -3979,8 +4230,8 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
     } else {
         // Standard function with "stdcall" calling convention,
         // return value (if any) is saved in AX register
-        if (parent->return_type != ReturnSymbolType::Void) {
-            int32_t dst_size = compiler->GetSymbolTypeSize(return_type, false);
+        if (parent->return_type.base != BaseSymbolType::Void || parent->return_type.pointer != 0) {
+            int32_t dst_size = compiler->GetSymbolTypeSize(parent->return_type);
 
             switch (i->return_statement.op.exp_type) {
                 case ExpressionType::Constant: {
@@ -4014,7 +4265,7 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
             SymbolTableEntry* param_decl = symbol_table;
             while (param_decl) {
                 if (param_decl->parameter != 0 && param_decl->parent && strcmp(param_decl->parent, parent->name) == 0) {
-                    stack_param_size += compiler->GetSymbolTypeSize(param_decl->type, param_decl->size == IsPointer);
+                    stack_param_size += compiler->GetSymbolTypeSize(param_decl->type);
                 }
 
                 param_decl = param_decl->next;
@@ -4066,7 +4317,7 @@ void DosExeEmitter::EmitSharedFunction(char* name, std::function<void()> emitter
     SymbolTableEntry* symbol = compiler->GetSymbols();
 
     while (symbol) {
-        if (symbol->type == SymbolType::SharedFunction && strcmp(symbol->name, name) == 0) {
+        if (symbol->type.base == BaseSymbolType::SharedFunction && strcmp(symbol->name, name) == 0) {
             if (symbol->ref_count > 0) {
                 Log::Write(LogType::Info, "Emitting \"%s\"...", name);
 
@@ -4084,18 +4335,6 @@ void DosExeEmitter::EmitSharedFunction(char* name, std::function<void()> emitter
     }
 
     ThrowOnUnreachableCode();
-}
-
-int8_t DosExeEmitter::SizeToShift(int32_t size)
-{
-    size >>= 1;
-
-    int8_t bits = 0;
-    while (size > 0) {
-        size >>= 1;
-        bits++;
-    }
-    return bits;
 }
 
 uint8_t* DosExeEmitter::AllocateBuffer(uint32_t size)
