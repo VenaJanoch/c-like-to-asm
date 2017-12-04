@@ -780,18 +780,20 @@ assignment
                     message, @1.first_line, @1.first_column);
             }
 
-            if (!c.CanImplicitCast(decl->type, $7.type, $7.exp_type)) {
-                std::string message = "Cannot assign to variable \"";
-                message += $1;
-                message += "\" because of type mismatch";
-                throw CompilerException(CompilerExceptionSource::Statement,
-                    message, @1.first_line, @1.first_column);
-            }
-
 			if (decl->type.pointer == 0) {
                 std::string message = "Variable \"";
                 message += $1;
                 message += "\" is not declared as pointer";
+                throw CompilerException(CompilerExceptionSource::Statement,
+                    message, @1.first_line, @1.first_column);
+            }
+
+			SymbolType resolved_type = decl->type;
+			resolved_type.pointer--;
+            if (!c.CanImplicitCast(resolved_type, $7.type, $7.exp_type)) {
+                std::string message = "Cannot assign to variable \"";
+                message += $1;
+                message += "\" because of type mismatch";
                 throw CompilerException(CompilerExceptionSource::Statement,
                     message, @1.first_line, @1.first_column);
             }
