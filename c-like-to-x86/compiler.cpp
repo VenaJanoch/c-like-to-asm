@@ -707,6 +707,13 @@ void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameter
         throw CompilerException(CompilerExceptionSource::Statement, message, yylineno, -1);
     }
 
+    if (current->parameter != parameter_count) {
+        std::string message = "Cannot call function \"";
+        message += name;
+        message += "\" because of parameter count mismatch";
+        throw CompilerException(CompilerExceptionSource::Statement, message, yylineno, -1);
+    }
+
     current = symbol_table;
     int32_t parameters_found = 0;
 

@@ -1502,6 +1502,10 @@ void DosExeEmitter::SaveAndUnloadAllRegisters(bool force)
 
 void DosExeEmitter::MarkRegisterAsDiscarded(CpuRegister reg)
 {
+    if (!parent) {
+        return;
+    }
+
     std::list<DosVariableDescriptor>::iterator it = variables.begin();
 
     while (it != variables.end()) {
