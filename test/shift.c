@@ -1,13 +1,13 @@
 uint8 Main(){
 
-/*	PrintString("Zadejte cislo pro posunuti");
+	PrintString("Zadejte cislo pro posunuti");
 	PrintNewLine();
 
-	uint16 number32 = ReadUint32();
-	*/
-	
+	uint32 number32 = ReadUint32();
+
+
 	uint16 number16;
-	number16 = 60;
+	number16 = cast<uint16>(number32);
 	PrintNewLine();
 
 	uint16 i;
