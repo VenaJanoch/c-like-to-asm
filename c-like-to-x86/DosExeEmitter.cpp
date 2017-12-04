@@ -1399,7 +1399,7 @@ void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionO
                 // Register to pointer (16-bit)
                 uint8_t* a = AllocateBufferForInstruction(2);
                 a[0] = 0x88;   // mov rm8, r8
-                a[1] = ToXrm(0, reg_dst, 4);
+                a[1] = ToXrm(0, reg_dst, 5);
             } else if (!var->symbol->parent) {
                 // Register to static (16-bit range)
                 uint8_t* a = AllocateBufferForInstruction(2 + 2);
@@ -1422,7 +1422,7 @@ void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionO
                 // Register to pointer (16-bit)
                 uint8_t* a = AllocateBufferForInstruction(2);
                 a[0] = 0x89;   // mov rm16, r16
-                a[1] = ToXrm(0, reg_dst, 4);
+                a[1] = ToXrm(0, reg_dst, 5);
             } else if (!var->symbol->parent) {
                 // Register to static (16-bit range)
                 uint8_t* a = AllocateBufferForInstruction(2 + 2);
@@ -1446,7 +1446,7 @@ void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionO
                 uint8_t* a = AllocateBufferForInstruction(3);
                 a[0] = 0x66;   // Operand size prefix
                 a[1] = 0x89;   // mov rm32, r32
-                a[2] = ToXrm(0, reg_dst, 4);
+                a[2] = ToXrm(0, reg_dst, 5);
             } else if (!var->symbol->parent) {
                 // Register to static (16-bit range)
                 uint8_t* a = AllocateBufferForInstruction(3 + 2);
@@ -2640,8 +2640,9 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
             int32_t op1_size = compiler->GetSymbolTypeSize(op1->symbol->type);
             int32_t dst_size = compiler->GetSymbolTypeSize(dst->symbol->type);
 
+            CpuRegister reg_dst;
             if (op1->symbol->exp_type == ExpressionType::Constant) {
-                dst->reg = GetUnusedRegister();
+                reg_dst = GetUnusedRegister();
 
                 if (op1->symbol->type.base == BaseSymbolType::String) {
                     ThrowOnUnreachableCode();
@@ -2664,19 +2665,20 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
                     */
                 } else {
                     int32_t value = atoi(op1->value);
-                    LoadConstantToRegister(value, dst->reg, dst_size);
+                    LoadConstantToRegister(value, reg_dst, dst_size);
                 }
             } else if (i->assignment.op1.index.value) {
-                dst->reg = LoadIndexedVariable(op1, i->assignment.op1.index, dst_size);
+                reg_dst = LoadIndexedVariable(op1, i->assignment.op1.index, dst_size);
             } else {
-                dst->reg = LoadVariableUnreferenced(op1, dst_size);
+                reg_dst = LoadVariableUnreferenced(op1, dst_size);
             }
 
             if (i->assignment.dst_index.value) {
                 // Array values are not cached
-                SaveIndexedVariable(dst, i->assignment.dst_index, dst->reg);
+                SaveIndexedVariable(dst, i->assignment.dst_index, reg_dst);
                 dst->reg = CpuRegister::None;
             } else {
+                dst->reg = reg_dst;
                 dst->is_dirty = true;
                 dst->last_used = ip_src;
             }

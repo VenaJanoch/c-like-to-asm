@@ -739,16 +739,14 @@ void Compiler::PrepareForCall(const char* name, SymbolTableEntry* call_parameter
             return;
         }
         
-        // ToDo: Correct ExpressionType
-        /*if (call_parameters->exp_type == ExpressionType::VariablePointer ||
-            !CanImplicitCast(current->type, call_parameters->type, call_parameters->exp_type) ) {
+        if (!CanImplicitCast(current->type, call_parameters->type, call_parameters->exp_type)) {
             std::string message = "Cannot call function \"";
             message += name;
             message += "\" because of parameter \"";
             message += current->name;
             message += "\" type mismatch";
             throw CompilerException(CompilerExceptionSource::Statement, message, yylineno, -1);
-        }*/
+        }
 
         // Add required parameter to stream
         char buffer[500];

@@ -114,13 +114,7 @@
 
 #define PrepareIndexedVariableIfNeeded(var)                                     \
     if (var.exp_type == ExpressionType::Variable && var.index.value) {          \
-        if (var.type.pointer == 0) {                                            \
-            ThrowOnUnreachableCode();                                           \
-        }                                                                       \
-                                                                                \
-        SymbolType _resolved_type = var.type;                                   \
-        _resolved_type.pointer--;                                               \
-        SymbolTableEntry* _decl_index = c.GetUnusedVariable(_resolved_type);    \
+        SymbolTableEntry* _decl_index = c.GetUnusedVariable(var.type);          \
                                                                                 \
         sprintf_s(output_buffer, "%s = %s[%s]", _decl_index->name, var.value, var.index.value); \
         InstructionEntry* _i = c.AddToStream(InstructionType::Assign, output_buffer);           \
@@ -128,7 +122,7 @@
         CopyOperand(_i->assignment.op1, var);                                   \
                                                                                 \
         var.value = _decl_index->name;                                          \
-        var.type = _resolved_type;                                              \
+        var.type = _decl_index->type;                                           \
         var.exp_type = ExpressionType::Variable;                                \
     }
 

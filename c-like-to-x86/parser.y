@@ -1644,8 +1644,11 @@ expression
 
 			CheckIsInt($3, "Only integer types are allowed as array index", @3);
 
+			SymbolType resolved_type = param->type;
+			resolved_type.pointer--;
+
             $$.value = $1;
-            $$.type = param->type;
+            $$.type = resolved_type;
             $$.exp_type = ExpressionType::Variable;
 			$$.index.value = $3.value;
 			$$.index.type = $3.type;
