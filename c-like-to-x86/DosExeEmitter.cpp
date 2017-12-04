@@ -2234,8 +2234,13 @@ void DosExeEmitter::BackpatchAddresses()
         if (it->target == DosBackpatchTarget::IP && it->ip_src == ip_src) {
             switch (it->type) {
                 case DosBackpatchType::ToRel8: {
-                    int8_t rel8 = (int8_t)(ip_src_to_dst[ip_src] - it->backpatch_ip);
-                    *(int8_t*)(buffer + it->backpatch_offset) = rel8;
+                    int32_t rel8 = (int32_t)(ip_src_to_dst[ip_src] - it->backpatch_ip);
+                    if (rel8 < INT8_MIN || rel8 > INT8_MAX) {
+                        throw CompilerException(CompilerExceptionSource::Compilation,
+                            "Compiler cannot generate that high relative address");
+                    }
+
+                    *(int8_t*)(buffer + it->backpatch_offset) = (int8_t)rel8;
                     break;
                 }
                 case DosBackpatchType::ToRel16: {
@@ -2262,8 +2267,13 @@ void DosExeEmitter::BackpatchLabels(const DosLabel& label, DosBackpatchTarget ta
         if (it->target == target && strcmp(it->value, label.name) == 0) {
             switch (it->type) {
                 case DosBackpatchType::ToRel8: {
-                    int8_t rel8 = (int8_t)(label.ip_dst - it->backpatch_ip);
-                    *(int8_t*)(buffer + it->backpatch_offset) = rel8;
+                    int32_t rel8 = (int32_t)(label.ip_dst - it->backpatch_ip);
+                    if (rel8 < INT8_MIN || rel8 > INT8_MAX) {
+                        throw CompilerException(CompilerExceptionSource::Compilation,
+                            "Compiler cannot generate that high relative address");
+                    }
+
+                    *(int8_t*)(buffer + it->backpatch_offset) = (int8_t)rel8;
                     break;
                 }
                 case DosBackpatchType::ToRel16: {
@@ -2626,12 +2636,11 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
             if (i->assignment.dst_index.value) {
                 // Array values are not cached
                 SaveIndexedVariable(dst, i->assignment.dst_index, reg_dst);
-                dst->reg = CpuRegister::None;
             } else {
                 dst->reg = reg_dst;
                 dst->is_dirty = true;
-                dst->last_used = ip_src;
             }
+            dst->last_used = ip_src;
             break;
         }
         case ExpressionType::Variable: {
@@ -2676,12 +2685,11 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
             if (i->assignment.dst_index.value) {
                 // Array values are not cached
                 SaveIndexedVariable(dst, i->assignment.dst_index, reg_dst);
-                dst->reg = CpuRegister::None;
             } else {
                 dst->reg = reg_dst;
                 dst->is_dirty = true;
-                dst->last_used = ip_src;
             }
+            dst->last_used = ip_src;
             break;
         }
 
@@ -3578,8 +3586,12 @@ void DosExeEmitter::EmitIf(InstructionEntry* i)
     }
 
     if (i->if_statement.ip < ip_src) {
-        uint32_t dst = ip_src_to_dst[i->if_statement.ip];
-        *(uint16_t*)goto_ptr = (int16_t)(dst - ip_dst);
+        int32_t rel8 = (int32_t)(ip_src_to_dst[i->if_statement.ip] - ip_dst);
+        if (rel8 < INT8_MIN || rel8 > INT8_MAX) {
+            throw CompilerException(CompilerExceptionSource::Compilation,
+                "Compiler cannot generate that high relative address");
+        }
+        *(uint8_t*)goto_ptr = rel8;
         return;
     }
 
