@@ -87,6 +87,7 @@ struct DosVariableDescriptor {
     uint32_t last_used;
 
     bool is_dirty;
+    bool force_save;
 };
 
 struct DosLabel {
@@ -252,7 +253,7 @@ private:
     /// <returns>Target register</returns>
     CpuRegister LoadVariableUnreferenced(DosVariableDescriptor* var, int32_t desired_size);
 
-    CpuRegister LoadVariablePointer(DosVariableDescriptor* var);
+    CpuRegister LoadVariablePointer(DosVariableDescriptor* var, bool force_reference);
 
     CpuRegister LoadIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size);
 

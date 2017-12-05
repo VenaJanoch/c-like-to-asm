@@ -1257,7 +1257,7 @@ void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, bool force)
     int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
 
     if (var->symbol->parent) {
-        if (!force && !FindNextVariableReference(var)) {
+        if (!force && !var->force_save && !FindNextVariableReference(var)) {
             // Non-static variable is not needed anymore, drop it...
 #if _DEBUG
             Log::Write(LogType::Info, "Variable \"%s\" was optimized out", var->symbol->name);
@@ -1668,7 +1668,7 @@ CpuRegister DosExeEmitter::LoadVariableUnreferenced(DosVariableDescriptor* var, 
             ThrowOnUnreachableCode();
         }
 
-        return LoadVariablePointer(var);
+        return LoadVariablePointer(var, true);
     }
 
     int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
@@ -1694,12 +1694,12 @@ CpuRegister DosExeEmitter::LoadVariableUnreferenced(DosVariableDescriptor* var, 
     return reg_dst;
 }
 
-CpuRegister DosExeEmitter::LoadVariablePointer(DosVariableDescriptor* var)
+CpuRegister DosExeEmitter::LoadVariablePointer(DosVariableDescriptor* var, bool force_reference)
 {
     CpuRegister reg_dst = GetUnusedRegister();
 
     // Hardcoded 16-bit pointer size
-    if (var->symbol->size == 0) { // It's already pointer
+    if (!force_reference && var->symbol->size == 0) { // It's already pointer
         return LoadVariableUnreferenced(var, 2);
     }
     
@@ -2678,6 +2678,11 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
                 }
             } else if (i->assignment.op1.index.value) {
                 reg_dst = LoadIndexedVariable(op1, i->assignment.op1.index, dst_size);
+            } else if (dst->symbol->type.pointer > op1->symbol->type.pointer) {
+                // Reference to variable
+                op1->force_save = true;
+
+                reg_dst = LoadVariablePointer(op1, true);
             } else {
                 reg_dst = LoadVariableUnreferenced(op1, dst_size);
             }
@@ -3863,7 +3868,7 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr, bool& g
     } else{
         uint8_t* a = AllocateBufferForInstruction(2 + 2);
         a[0] = 0x0F;
-        a[1] = 0x85; // jnz rel16
+        a[1] = 0x85; // jnz rel16 (i386+)
 
         goto_ptr = a + 2;
     }
@@ -4060,7 +4065,7 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr, bo
     } else {
         uint8_t* a = AllocateBufferForInstruction(2 + 2);
         a[0] = 0x0F;
-        a[1] = opcode + 0x10;
+        a[1] = opcode + 0x10; // (i386+)
 
         goto_ptr = (a + 2);
     }
@@ -4148,9 +4153,9 @@ void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr, bool&
 
     uint8_t opcode;
     if (i->if_statement.type == CompareType::NotEqual) {
-        opcode = 0x74; // jz rel8
+        opcode = 0x74; // jz rel
     } else if (i->if_statement.type == CompareType::Equal) {
-        opcode = 0x75; // jnz rel8
+        opcode = 0x75; // jnz rel
     } else {
         ThrowOnUnreachableCode();
     }
@@ -4163,7 +4168,7 @@ void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr, bool&
     } else {
         uint8_t* l2 = AllocateBufferForInstruction(2 + 2);
         l2[0] = 0x0F;
-        l2[1] = opcode + 0x10;
+        l2[1] = opcode + 0x10; // (i386+)
 
         goto_ptr = (l2 + 2);
     }
@@ -4310,7 +4315,8 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
 {
     was_return = true;
 
-    bool are_types_compatible = (i->return_statement.op.type == parent->return_type);
+    bool are_types_compatible = ((!i && parent->return_type.base == BaseSymbolType::Void && parent->return_type.pointer == 0) ||
+                                 i->return_statement.op.type == parent->return_type);
     if (!are_types_compatible) {
         are_types_compatible = compiler->GetLargestTypeForArithmetic(
             i->return_statement.op.type, parent->return_type).base != BaseSymbolType::Unknown;

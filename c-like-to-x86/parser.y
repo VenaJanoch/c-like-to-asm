@@ -1621,6 +1621,36 @@ expression
                 i->call_statement.return_symbol = decl->name;
             }
         }
+	| '&' id
+        {
+            LogDebug("P: Processing reference");
+
+            SymbolTableEntry* param = c.GetParameter($2);
+            if (!param) {
+                std::string message = "Variable \"";
+                message += $2;
+                message += "\" is not declared in scope";
+                throw CompilerException(CompilerExceptionSource::Statement,
+                    message, @1.first_line, @1.first_column);
+            }
+
+			SymbolType reference_type = param->type;
+			reference_type.pointer++;
+			SymbolTableEntry* decl = c.GetUnusedVariable(reference_type);
+
+			sprintf_s(output_buffer, "%s = &(%s)", decl->name, param->name);
+			InstructionEntry* i = c.AddToStream(InstructionType::Assign, output_buffer);
+			i->assignment.dst_value = decl->name;
+			i->assignment.op1.value = param->name;
+			i->assignment.op1.type = param->type;
+			i->assignment.op1.exp_type = ExpressionType::Variable;
+			i->assignment.op1.index.value = nullptr;
+
+            $$.value = decl->name;
+            $$.type = decl->type;
+            $$.exp_type = ExpressionType::Variable;
+			$$.index.value = nullptr;
+        }
 	| id '[' expression ']'
         {
             LogDebug("P: Processing array identifier");

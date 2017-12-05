@@ -134,7 +134,7 @@ IDENTIFIER ([a-zA-Z_][a-zA-Z0-9_]*)
     return yytext[0];
 }
 
-(")"|"}"|"]") {
+(")"|"}"|"]"|"&") {
     LogDebug("L: Found " << yytext[0]);
 
     allow_unary = false;
