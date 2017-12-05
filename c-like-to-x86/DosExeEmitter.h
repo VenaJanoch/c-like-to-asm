@@ -314,9 +314,9 @@ private:
     void EmitGotoLabel(InstructionEntry* i);
 
     void EmitIf(InstructionEntry* i);
-    inline void EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr);
-    inline void EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr);
-    inline void EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr);
+    inline void EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr, bool& goto_near);
+    inline void EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr, bool& goto_near);
+    inline void EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr, bool& goto_near);
 
     void EmitPush(InstructionEntry* i, std::stack<InstructionEntry*>& call_parameters);
     void EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table, std::stack<InstructionEntry*>& call_parameters);
@@ -346,6 +346,8 @@ private:
 
     template<typename T>
     T* AllocateBuffer();
+
+    const int32_t NearJumpThreshold = 10;
 
     Compiler* compiler;
 

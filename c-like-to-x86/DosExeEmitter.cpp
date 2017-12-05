@@ -3475,21 +3475,51 @@ void DosExeEmitter::EmitGoto(InstructionEntry* i)
     // Unload all registers before jump
     SaveAndUnloadAllRegisters(i->goto_statement.ip < ip_src);
 
-    uint8_t* a = AllocateBufferForInstruction(1 + 2);
-    a[0] = 0xE9;    // jmp rel16
+    uint8_t* goto_ptr = nullptr;
 
+    bool goto_near;
     if (i->goto_statement.ip < ip_src) {
-        // ToDo: This can generate "jmp rel8" if possible
-        uint32_t dst = ip_src_to_dst[i->goto_statement.ip];
-        *(uint16_t*)(a + 1) = (int16_t)(dst - ip_dst);
-        return;
+        // Jump target was already emitted, check if we can use 8-bit address
+        int32_t rel = (int32_t)(ip_src_to_dst[i->goto_statement.ip] - (ip_dst + 2));
+        goto_near = (rel > INT8_MIN && rel < INT8_MAX);
+    } else {
+        // Not emitted yet, use estimation
+        int32_t rel = (int32_t)(i->goto_statement.ip - ip_src) * NearJumpThreshold;
+        goto_near = (rel > INT8_MIN && rel < INT8_MAX);
     }
 
-    // Create backpatch info, if the line was not precessed yet
-    {
+    // Emit jump instruction
+    if (goto_near) {
+        uint8_t* a = AllocateBufferForInstruction(1 + 1);
+        a[0] = 0xEB; // jmp rel8
+
+        goto_ptr = (a + 1);
+    } else {
+        uint8_t* a = AllocateBufferForInstruction(1 + 2);
+        a[0] = 0xE9; // jmp rel16
+
+        goto_ptr = (a + 1);
+    }
+
+    if (i->goto_statement.ip < ip_src) {
+        // Already defined
+        int32_t rel = (int32_t)(ip_src_to_dst[i->goto_statement.ip] - ip_dst);
+
+        if (goto_near) {
+            if (rel < INT8_MIN || rel > INT8_MAX) {
+                throw CompilerException(CompilerExceptionSource::Compilation,
+                    "Compiler cannot generate that high relative address");
+            }
+
+            *(uint8_t*)goto_ptr = rel;
+        } else {
+            *(uint16_t*)goto_ptr = rel;
+        }
+    } else {
+        // Create backpatch info, if the label was not defined yet
         DosBackpatchInstruction b { };
-        b.type = DosBackpatchType::ToRel16;
-        b.backpatch_offset = (a + 1) - buffer;
+        b.type = (goto_near ? DosBackpatchType::ToRel8 : DosBackpatchType::ToRel16);
+        b.backpatch_offset = goto_ptr - buffer;
         b.backpatch_ip = ip_dst;
         b.target = DosBackpatchTarget::IP;
         b.ip_src = i->goto_statement.ip;
@@ -3513,18 +3543,53 @@ void DosExeEmitter::EmitGotoLabel(InstructionEntry* i)
     // Unload all registers before jump
     SaveAndUnloadAllRegisters(it != labels.end());
 
+    uint8_t* goto_ptr = nullptr;
+
+    bool goto_near;
+    if (it != labels.end()) {
+        // Jump target was already emitted, check if we can use 8-bit address
+        int32_t rel = (int32_t)(it->ip_dst - (ip_dst + 2));
+        goto_near = (rel > INT8_MIN && rel < INT8_MAX);
+    } else {
+        // Not emitted yet, use estimation
+        // ToDo: Implement estamination
+        //int32_t rel = (int32_t)(i->if_statement.ip - ip_src) * NearJumpThreshold;
+        //goto_near = (rel > INT8_MIN && rel < INT8_MAX);
+        goto_near = false;
+    }
+
     // Emit jump instruction
-    uint8_t* a = AllocateBufferForInstruction(3);
-    a[0] = 0xE9; // jmp rel16
+    if (goto_near) {
+        uint8_t* a = AllocateBufferForInstruction(1 + 1);
+        a[0] = 0xEB; // jmp rel8
+
+        goto_ptr = (a + 1);
+    } else {
+        uint8_t* a = AllocateBufferForInstruction(1 + 2);
+        a[0] = 0xE9; // jmp rel16
+
+        goto_ptr = (a + 1);
+    }
 
     if (it != labels.end()) {
         // Already defined
-        *(uint16_t*)(a + 1) = (int16_t)(it->ip_dst - ip_dst);
+        int32_t rel = (int32_t)(it->ip_dst - ip_dst);
+
+        if (goto_near) {
+            if (rel < INT8_MIN || rel > INT8_MAX) {
+                throw CompilerException(CompilerExceptionSource::Compilation,
+                    "Compiler cannot generate that high relative address");
+            }
+
+            *(uint8_t*)goto_ptr = rel;
+        } else {
+            *(uint16_t*)goto_ptr = rel;
+        }
     } else {
         // Create backpatch info, if the label was not defined yet
-        DosBackpatchInstruction b{};
-        b.type = DosBackpatchType::ToRel16;
-        b.backpatch_offset = (a + 1) - buffer;
+        DosBackpatchInstruction b { };
+        b.type = (goto_near ? DosBackpatchType::ToRel8 : DosBackpatchType::ToRel16);
+        b.backpatch_offset = goto_ptr - buffer;
         b.backpatch_ip = ip_dst;
         b.target = DosBackpatchTarget::Label;
         b.value = i->goto_label_statement.label;
@@ -3550,6 +3615,17 @@ void DosExeEmitter::EmitIf(InstructionEntry* i)
 
     uint8_t* goto_ptr = nullptr;
 
+    bool goto_near;
+    if (i->if_statement.ip < ip_src) {
+        // Jump target was already emitted, check if we can use 8-bit address
+        int32_t rel = (int32_t)(ip_src_to_dst[i->if_statement.ip] - (ip_dst + NearJumpThreshold));
+        goto_near = (rel > INT8_MIN && rel < INT8_MAX);
+    } else {
+        // Not emitted yet, use estimation
+        int32_t rel = (int32_t)(i->if_statement.ip - ip_src) * NearJumpThreshold;
+        goto_near = (rel > INT8_MIN && rel < INT8_MAX);
+    }
+
     if (i->if_statement.op1.exp_type == ExpressionType::Constant) {
         // Constant has to be second operand, swap them
         std::swap(i->if_statement.op1, i->if_statement.op2);
@@ -3558,12 +3634,12 @@ void DosExeEmitter::EmitIf(InstructionEntry* i)
     }
 
     if (i->if_statement.op1.type.base == BaseSymbolType::String || i->if_statement.op2.type.base == BaseSymbolType::String) {
-        EmitIfStrings(i, goto_ptr);
+        EmitIfStrings(i, goto_ptr, goto_near);
     } else {
         switch (i->if_statement.type) {
             case CompareType::LogOr:
             case CompareType::LogAnd: {
-                EmitIfOrAnd(i, goto_ptr);
+                EmitIfOrAnd(i, goto_ptr, goto_near);
                 break;
             }
 
@@ -3573,7 +3649,7 @@ void DosExeEmitter::EmitIf(InstructionEntry* i)
             case CompareType::Less:
             case CompareType::GreaterOrEqual:
             case CompareType::LessOrEqual: {
-                EmitIfArithmetic(i, goto_ptr);
+                EmitIfArithmetic(i, goto_ptr, goto_near);
                 break;
             }
 
@@ -3586,19 +3662,21 @@ void DosExeEmitter::EmitIf(InstructionEntry* i)
     }
 
     if (i->if_statement.ip < ip_src) {
-        int32_t rel8 = (int32_t)(ip_src_to_dst[i->if_statement.ip] - ip_dst);
-        if (rel8 < INT8_MIN || rel8 > INT8_MAX) {
-            throw CompilerException(CompilerExceptionSource::Compilation,
-                "Compiler cannot generate that high relative address");
-        }
-        *(uint8_t*)goto_ptr = rel8;
-        return;
-    }
+        int32_t rel = (int32_t)(ip_src_to_dst[i->if_statement.ip] - ip_dst);
+        if (goto_near) {
+            if (rel < INT8_MIN || rel > INT8_MAX) {
+                throw CompilerException(CompilerExceptionSource::Compilation,
+                    "Compiler cannot generate that high relative address");
+            }
 
-    // Create backpatch info, if the line was not precessed yet
-    {
+            *(uint8_t*)goto_ptr = rel;
+        } else {
+            *(uint16_t*)goto_ptr = rel;
+        }
+    } else {
+        // Create backpatch info, if the line was not precessed yet
         DosBackpatchInstruction b { };
-        b.type = DosBackpatchType::ToRel8;
+        b.type = (goto_near ? DosBackpatchType::ToRel8 : DosBackpatchType::ToRel16);
         b.backpatch_offset = goto_ptr - buffer;
         b.backpatch_ip = ip_dst;
         b.target = DosBackpatchTarget::IP;
@@ -3607,7 +3685,7 @@ void DosExeEmitter::EmitIf(InstructionEntry* i)
     }
 }
 
-void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
+void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr, bool& goto_near)
 {
     switch (i->if_statement.op2.exp_type) {
         case ExpressionType::Constant: {
@@ -3617,10 +3695,17 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
                     int32_t value2 = atoi(i->if_statement.op2.value);
 
                     if (IfConstexpr(i->if_statement.type, value1, value2)) {
-                        uint8_t* a = AllocateBufferForInstruction(1 + 1);
-                        a[0] = 0xEB;   // jmp rel8
+                        if (goto_near) {
+                            uint8_t* a = AllocateBufferForInstruction(1 + 1);
+                            a[0] = 0xEB;   // jmp rel8
 
-                        goto_ptr = a + 1;
+                            goto_ptr = a + 1;
+                        } else {
+                            uint8_t* a = AllocateBufferForInstruction(1 + 2);
+                            a[0] = 0xE9;   // jmp rel16
+
+                            goto_ptr = a + 1;
+                        }
                     }
                     break;
                 }
@@ -3770,13 +3855,21 @@ void DosExeEmitter::EmitIfOrAnd(InstructionEntry* i, uint8_t*& goto_ptr)
         default: ThrowOnUnreachableCode();
     }
 
-    uint8_t* a = AllocateBufferForInstruction(1 + 1);
-    a[0] = 0x75; // jnz rel8
+    if (goto_near) {
+        uint8_t* a = AllocateBufferForInstruction(1 + 1);
+        a[0] = 0x75; // jnz rel8
 
-    goto_ptr = a + 1;
+        goto_ptr = a + 1;
+    } else{
+        uint8_t* a = AllocateBufferForInstruction(2 + 2);
+        a[0] = 0x0F;
+        a[1] = 0x85; // jnz rel16
+
+        goto_ptr = a + 2;
+    }
 }
 
-void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
+void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr, bool& goto_near)
 {
     switch (i->if_statement.op2.exp_type) {
         case ExpressionType::Constant: {
@@ -3786,10 +3879,17 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
                     int32_t value2 = atoi(i->if_statement.op2.value);
 
                     if (IfConstexpr(i->if_statement.type, value1, value2)) {
-                        uint8_t* a = AllocateBufferForInstruction(1 + 1);
-                        a[0] = 0xEB;   // jmp rel8
+                        if (goto_near) {
+                            uint8_t* a = AllocateBufferForInstruction(1 + 1);
+                            a[0] = 0xEB;   // jmp rel8
 
-                        goto_ptr = a + 1;
+                            goto_ptr = a + 1;
+                        } else {
+                            uint8_t* a = AllocateBufferForInstruction(1 + 2);
+                            a[0] = 0xE9;   // jmp rel16
+
+                            goto_ptr = a + 1;
+                        }
                     }
                     break;
                 }
@@ -3936,26 +4036,37 @@ void DosExeEmitter::EmitIfArithmetic(InstructionEntry* i, uint8_t*& goto_ptr)
     }
 
     if (goto_ptr) {
+        // Jump instruction was already emitted
         return;
     }
 
-    uint8_t* a = AllocateBufferForInstruction(1 + 1);
-
+    uint8_t opcode;
     switch (i->if_statement.type) {
-        case CompareType::Equal:          a[0] = 0x74; break; // jz rel8
-        case CompareType::NotEqual:       a[0] = 0x75; break; // jnz rel8
-        case CompareType::Greater:        a[0] = 0x77; break; // jnbe rel8
-        case CompareType::Less:           a[0] = 0x72; break; // jb rel8
-        case CompareType::GreaterOrEqual: a[0] = 0x73; break; // jnb rel8
-        case CompareType::LessOrEqual:    a[0] = 0x76; break; // jbe rel8
+        case CompareType::Equal:          opcode = 0x74; break; // jz rel
+        case CompareType::NotEqual:       opcode = 0x75; break; // jnz rel
+        case CompareType::Greater:        opcode = 0x77; break; // jnbe rel
+        case CompareType::Less:           opcode = 0x72; break; // jb rel
+        case CompareType::GreaterOrEqual: opcode = 0x73; break; // jnb rel
+        case CompareType::LessOrEqual:    opcode = 0x76; break; // jbe rel
 
         default: ThrowOnUnreachableCode();
     }
 
-    goto_ptr = (a + 1);
+    if (goto_near) {
+        uint8_t* a = AllocateBufferForInstruction(1 + 1);
+        a[0] = opcode;
+
+        goto_ptr = (a + 1);
+    } else {
+        uint8_t* a = AllocateBufferForInstruction(2 + 2);
+        a[0] = 0x0F;
+        a[1] = opcode + 0x10;
+
+        goto_ptr = (a + 2);
+    }
 }
 
-void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr)
+void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr, bool& goto_near)
 {
     if (i->if_statement.op1.type != i->if_statement.op2.type) {
         ThrowOnUnreachableCode();
@@ -3971,10 +4082,17 @@ void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr)
         }
 
         if (result) {
-            uint8_t* a = AllocateBufferForInstruction(1 + 1);
-            a[0] = 0xEB;    // jmp rel8
+            if (goto_near) {
+                uint8_t* a = AllocateBufferForInstruction(1 + 1);
+                a[0] = 0xEB;   // jmp rel8
 
-            goto_ptr = (a + 1);
+                goto_ptr = a + 1;
+            } else {
+                uint8_t* a = AllocateBufferForInstruction(1 + 2);
+                a[0] = 0xE9;   // jmp rel16
+
+                goto_ptr = a + 1;
+            }
         }
         return;
     }
@@ -4037,10 +4155,18 @@ void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr)
         ThrowOnUnreachableCode();
     }
 
-    uint8_t* l2 = AllocateBufferForInstruction(2);
-    l2[0] = opcode;
-    
-    goto_ptr = (l2 + 1);
+    if (goto_near) {
+        uint8_t* l2 = AllocateBufferForInstruction(1 + 1);
+        l2[0] = opcode;
+
+        goto_ptr = (l2 + 1);
+    } else {
+        uint8_t* l2 = AllocateBufferForInstruction(2 + 2);
+        l2[0] = 0x0F;
+        l2[1] = opcode + 0x10;
+
+        goto_ptr = (l2 + 2);
+    }
 }
 
 void DosExeEmitter::EmitPush(InstructionEntry* i, std::stack<InstructionEntry*>& call_parameters)
