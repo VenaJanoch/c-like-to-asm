@@ -21,35 +21,38 @@ uint8 Main(){
 
 	if (string1 == word1) {
 		PrintString(string1);
-		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: \n");
+		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: \r\n");
 		PrintString("Pes domácí(Canis lupus f.familiaris) je nejvìtší domestikovaná šelma a jedno z nejstarších domestikovaných zvíøat vùbec, provázející èlovìka minimálnì 14 tisíc let");
+		PrintNewLine();
 	}else if (string1 == word2) {
 		PrintString(string1);
 		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: ");
 		PrintNewLine();
 		PrintString("Koèka domácí (Felis silvestris f. catus) je domestikovaná forma koèky divoké, která je již po tisíciletí prùvodcem èlovìka.");
-		}else if (string1 == word3) {
+		PrintNewLine();
+	}else if (string1 == word3) {
 		PrintString(string1);
 		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: ");
 		PrintNewLine();
 		PrintString("Prase je èeské jméno pro nìkolik pøíbuzných rodù nepøežvýkavých sudokopytníkù, patøících do èeledi prasatovitých a podèeledí pravá prasata (Suinae) nebo bradaviènatá prasata");
-		
+		PrintNewLine();
 	}else if (string1 == word4) {
 		PrintString(string1);
 		PrintString(" se nachazi ve slovniku, zde je jeho vyznam: ");
 		PrintNewLine();
 		PrintString("Tur domácí (Bos primigenius f. taurus) je domestikovaný sudokopytnatý savec celosvìtovì chovaný pro mnohostranný hospodáøský užitek. Spoleènì s kurem domácím jde v celosvìtovém mìøítku o nejpoèetnìjší druh chovaného hospodáøského zvíøete.");
-		
+		PrintNewLine();
 	}else if (string1 == word5) {
 		PrintString(string1);
 		PrintString(" se nachazi ve slovniku, zde je jeho vyznam:");
 		PrintNewLine();
 		PrintString("Kùò domácí (Equus caballus) nebo pouze kùò je domestikované zvíøe patøící mezi lichokopytníky. V minulosti se konì používali pøedevším k pøepravì. Od 20. století se na nich jezdí hlavnì rekreaènì.");
-		
+		PrintNewLine();
 	}else{
 		PrintString("Vase slovo ");
 		PrintString(string1);
-		PrintString(" se bohuzel nenachazi ve slovniku");
+		PrintString(" se bohuzel nenachazi ve slovniku\r\n");
+		PrintNewLine();
 	}
 	
 
