@@ -2678,13 +2678,16 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
                 }
             } else if (i->assignment.op1.index.value) {
                 reg_dst = LoadIndexedVariable(op1, i->assignment.op1.index, dst_size);
-            } else if (dst->symbol->type.pointer > op1->symbol->type.pointer) {
-                // Reference to variable
-                op1->force_save = true;
-
-                reg_dst = LoadVariablePointer(op1, true);
             } else {
-                reg_dst = LoadVariableUnreferenced(op1, dst_size);
+                bool needs_reference = (!i->assignment.dst_index.value && dst->symbol->type.pointer > op1->symbol->type.pointer);
+                if (needs_reference) {
+                    // Reference to variable
+                    op1->force_save = true;
+
+                    reg_dst = LoadVariablePointer(op1, true);
+                } else {
+                    reg_dst = LoadVariableUnreferenced(op1, dst_size);
+                }
             }
 
             if (i->assignment.dst_index.value) {
