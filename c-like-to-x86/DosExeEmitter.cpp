@@ -2616,7 +2616,7 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
                 reg_dst = GetUnusedRegister();
 
                 uint8_t* a = AllocateBufferForInstruction(1 + 2);
-                a[0] = ToOpR(0xB8, dst->reg);   // mov r16, imm16
+                a[0] = ToOpR(0xB8, reg_dst);   // mov r16, imm16
 
                 // Create backpatch info for string
                 BackpatchString(a + 1, i->assignment.op1.value);
@@ -4117,7 +4117,7 @@ void DosExeEmitter::EmitIfStrings(InstructionEntry* i, uint8_t*& goto_ptr, bool&
     SymbolTableEntry* symbol = compiler->GetSymbols();
     while (symbol) {
         if (symbol->type.base == BaseSymbolType::SharedFunction && strcmp(symbol->name, "#StringsEqual") == 0) {
-            symbol->ip++;
+            symbol->ref_count++;
             break;
         }
 
