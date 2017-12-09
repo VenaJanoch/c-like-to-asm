@@ -1,5 +1,4 @@
 uint8 Main()
-
 {
 
 	uint32 <5>array;

@@ -896,10 +896,6 @@ bool Compiler::CanExplicitCast(SymbolType to, SymbolType from)
         return false;
     }
 
-    if (from.base == BaseSymbolType::String || to.base == BaseSymbolType::String) {
-        return false;
-    }
-
     return true;
 }
 

@@ -10,6 +10,7 @@ uint8 Main() {
 	uint8 vysledek = x + y + z;
 
 	PrintUint32(vysledek);
+	PrintNewLine();
 
    return 0;
 }

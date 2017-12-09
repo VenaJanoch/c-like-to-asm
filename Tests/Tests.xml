@@ -1,0 +1,24 @@
+<Tests>
+    <!--
+    <Test>
+        <Source>Path to source code</Source>
+        <Args>DOS start-up arguments, Optimal</Args>
+        <Input>Path to stdin file</Input>
+        <Output>Path to expected stdout file, Optimal</Output>
+        <ExitCode>Expected DOS exit code, Optimal</ExitCode>
+    </Test>
+    -->
+    
+    <Test>
+        <Source>vicenasobne_prirazeni.c</Source>
+        <Output>vicenasobne_prirazeni.txt</Output>
+    </Test>
+
+    <Test>
+        <Source>do_while.c</Source>
+        <Input>do_while.txt</Input>
+        <Output>do_while.txt</Output>
+    </Test>
+
+  
+</Tests>

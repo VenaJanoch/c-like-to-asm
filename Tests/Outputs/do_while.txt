@@ -1,0 +1,12 @@
+Enter a number: 
+4
+Enter a number: 
+10
+Enter a number: 
+2
+Enter a number: 
+55
+Enter a number: 
+0
+
+Sum is: 71

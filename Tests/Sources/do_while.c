@@ -10,6 +10,7 @@ uint8 Main()
 		PrintNewLine();
 		number = ReadUint32();
 		sum = sum + number;
+		PrintNewLine();
 	} while (number != 0);
 
 	PrintNewLine();
