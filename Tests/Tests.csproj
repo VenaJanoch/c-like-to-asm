@@ -72,6 +72,8 @@
     <Content Include="Sources\goto.c" />
     <Content Include="Sources\operatory_konstanty.c" />
     <Content Include="Sources\pointers.c" />
+    <Content Include="Sources\pointers_fc.c" />
+    <Content Include="Sources\pointers_fc.h" />
     <Content Include="Sources\pole.c" />
     <Content Include="Sources\shift.c" />
     <Content Include="Sources\string.c" />

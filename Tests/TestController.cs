@@ -102,10 +102,8 @@ namespace Tests
 
         private void Compile(string sourcePath, string targetPath)
         {
-            Process p = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
+            Process p = new Process {
+                StartInfo = new ProcessStartInfo {
                     FileName = "c-like-to-x86.exe",
                     Arguments = "\"" + sourcePath.Replace("\"", "\\\"") + "\" \"" + targetPath.Replace("\"", "\\\"") + "\"",
                     CreateNoWindow = true,
