@@ -91,7 +91,7 @@ void DosExeEmitter::EmitInstructions(InstructionEntry* instruction_stream)
         // Unload all registers before "goto" statement target, so we can
         // jump to it without any issues
         if (discontinuous_ips.find(ip_src) != discontinuous_ips.end()) {
-            SaveAndUnloadAllRegisters(false);
+            SaveAndUnloadAllRegisters(SaveReason::Before);
         }
 
         // Used for abstract instruction to real instruction pointer conversion
@@ -1054,7 +1054,7 @@ CpuRegister DosExeEmitter::GetUnusedRegister()
 
     // Register was used, save it back to the stack and discard it
     if (last_used->reg != CpuRegister::None) {
-        SaveVariable(last_used, false);
+        SaveVariable(last_used, SaveReason::Inside);
     }
 
     last_used->reg = CpuRegister::None;
@@ -1125,16 +1125,28 @@ DosVariableDescriptor* DosExeEmitter::FindVariableByName(char* name)
     ThrowOnUnreachableCode();
 }
 
-InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor* var)
+InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor* var, SaveReason reason)
 {
     InstructionEntry* current = current_instruction;
     int32_t ip = ip_src;
 
+    if (reason == SaveReason::Force) {
+        // It was referenced in the current instruction,
+        // but it doesn't matter anyway
+        return current;
+    }
+
+    if (reason == SaveReason::Inside && current) {
+        // Skip the current instruction,
+        // start searching from the following instruction
+        current = current->next;
+        ip++;
+    }
+
     while (current && ip <= parent_end_ip) {
         switch (current->type) {
             case InstructionType::Assign: {
-                if (/*ip != ip_src &&*/
-                    (current->assignment.op1.exp_type == ExpressionType::Variable &&
+                if ((current->assignment.op1.exp_type == ExpressionType::Variable &&
                      current->assignment.op1.value &&
                      strcmp(var->symbol->name, current->assignment.op1.value) == 0) ||
                     (current->assignment.op2.exp_type == ExpressionType::Variable &&
@@ -1149,8 +1161,7 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
                 break;
             }
             case InstructionType::If: {
-                if (/*ip != ip_src &&*/
-                    (current->if_statement.op1.exp_type == ExpressionType::Variable &&
+                if ((current->if_statement.op1.exp_type == ExpressionType::Variable &&
                      current->if_statement.op1.value &&
                      strcmp(var->symbol->name, current->if_statement.op1.value) == 0) ||
                     (current->if_statement.op2.exp_type == ExpressionType::Variable &&
@@ -1158,6 +1169,16 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
                      strcmp(var->symbol->name, current->if_statement.op2.value) == 0)) {
 
                     return current;
+                }
+
+                if (current->if_statement.ip < ip_src) {
+                    // Program wants to jump backwards, it's unpredictible
+                    if (var->symbol->is_temp) {
+                        // Temp. variables will go out of scope
+                        return nullptr;
+                    } else {
+                        return current;
+                    }
                 }
                 break;
             }
@@ -1192,8 +1213,7 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
                 break;
             }
             case InstructionType::Push: {
-                if (/*ip != ip_src &&*/
-                    current->push_statement.symbol->exp_type == ExpressionType::Variable &&
+                if (current->push_statement.symbol->exp_type == ExpressionType::Variable &&
                     current->push_statement.symbol->name &&
                     strcmp(var->symbol->name, current->push_statement.symbol->name) == 0) {
 
@@ -1202,8 +1222,7 @@ InstructionEntry* DosExeEmitter::FindNextVariableReference(DosVariableDescriptor
                 break;
             }
             case InstructionType::Return: {
-                if (/*ip != ip_src &&*/
-                    current->return_statement.op.exp_type == ExpressionType::Variable &&
+                if (current->return_statement.op.exp_type == ExpressionType::Variable &&
                     current->return_statement.op.value &&
                     strcmp(var->symbol->name, current->return_statement.op.value) == 0) {
 
@@ -1244,7 +1263,7 @@ void DosExeEmitter::RefreshParentEndIp(SymbolTableEntry* symbol_table)
     parent_end_ip = ip;
 }
 
-void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, bool force)
+void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, SaveReason reason)
 {
     if (var->symbol->size > 0) {
         ThrowOnUnreachableCode();
@@ -1257,8 +1276,8 @@ void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, bool force)
     int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
 
     if (var->symbol->parent) {
-        if (!force && !var->force_save && !FindNextVariableReference(var)) {
-            // Non-static variable is not needed anymore, drop it...
+        if (!var->force_save && !FindNextVariableReference(var, reason)) {
+            // Variable is not needed anymore, drop it...
 #if _DEBUG
             Log::Write(LogType::Info, "Variable \"%s\" was optimized out", var->symbol->name);
 #endif
@@ -1471,13 +1490,13 @@ void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionO
     }
 }
 
-void DosExeEmitter::SaveAndUnloadRegister(CpuRegister reg)
+void DosExeEmitter::SaveAndUnloadRegister(CpuRegister reg, SaveReason reason)
 {
     std::list<DosVariableDescriptor>::iterator it = variables.begin();
 
     while (it != variables.end()) {
         if (it->reg == reg && (!it->symbol->parent || (it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0))) {
-            SaveVariable(&(*it), false);
+            SaveVariable(&(*it), reason);
             it->reg = CpuRegister::None;
             break;
         }
@@ -1486,13 +1505,13 @@ void DosExeEmitter::SaveAndUnloadRegister(CpuRegister reg)
     }
 }
 
-void DosExeEmitter::SaveAndUnloadAllRegisters(bool force)
+void DosExeEmitter::SaveAndUnloadAllRegisters(SaveReason reason)
 {
     std::list<DosVariableDescriptor>::iterator it = variables.begin();
 
     while (it != variables.end()) {
         if (it->reg != CpuRegister::None && (!it->symbol->parent || (it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0))) {
-            SaveVariable(&(*it), force);
+            SaveVariable(&(*it), reason);
             it->reg = CpuRegister::None;
         }
 
@@ -1582,6 +1601,7 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, int32_t para
 
     switch (param_size) {
         case 1: {
+            // ToDo: Use movzx
             if (!var->symbol->parent) {
                 // Static push using register (16-bit range)
                 CpuRegister reg_temp = GetUnusedRegister();
@@ -1663,7 +1683,7 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, int32_t para
 CpuRegister DosExeEmitter::LoadVariableUnreferenced(DosVariableDescriptor* var, int32_t desired_size)
 {
     if (var->symbol->size > 0) {
-        // ToDo
+
         if (desired_size != 2) {
             ThrowOnUnreachableCode();
         }
@@ -1948,13 +1968,13 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
     if (var->reg != CpuRegister::None && (var_size >= desired_size || var->reg != reg_dst)) {
         // Variable is already in desired register with desired size
         if (var->reg == reg_dst) {
-            SaveVariable(var, false);
+            SaveVariable(var, SaveReason::Inside);
             var->reg = CpuRegister::None;
             return;
         }
 
         // Variable is in another register
-        SaveAndUnloadRegister(reg_dst);
+        SaveAndUnloadRegister(reg_dst, SaveReason::Inside);
 
         // Copy value to desired register
         switch (var_size) {
@@ -2008,14 +2028,14 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
         // Expansion is needed
         if (var->reg == reg_dst) {
             // Variable is already in register with smaller size
-            SaveVariable(var, true);
+            SaveVariable(var, SaveReason::Inside);
         } else {
             // Variable is on the stack
-            SaveAndUnloadRegister(reg_dst);
+            SaveAndUnloadRegister(reg_dst, SaveReason::Inside);
         }
     } else {
         // Variable is on the stack
-        SaveAndUnloadRegister(reg_dst);
+        SaveAndUnloadRegister(reg_dst, SaveReason::Inside);
     }
 
     switch (var_size) {
@@ -2411,7 +2431,7 @@ Retry:
 
                 // Unload all registers before label, so we can
                 // jump to it without any issues
-                SaveAndUnloadAllRegisters(false);
+                SaveAndUnloadAllRegisters(SaveReason::Before);
 
                 // Adjust "ip_src_to_dst" mapping, because of unloaded registers
                 ip_src_to_dst[ip_src] = ip_dst;
@@ -2621,7 +2641,7 @@ void DosExeEmitter::EmitAssignNone(InstructionEntry* i)
                 // Create backpatch info for string
                 BackpatchString(a + 1, i->assignment.op1.value);
             } else {
-                //// No need to allocate register for constant value
+                // ToDo: No need to allocate register for constant value
                 //var->value = i->assignment.op1_value;
 
                 // Load constant to register
@@ -2861,18 +2881,52 @@ void DosExeEmitter::EmitAssignAddSubtract(InstructionEntry* i)
             if (i->assignment.type == AssignType::Subtract) {
                 value = -value;
             }
+            
+            switch (dst_size) {
+                case 1: {
+                    uint8_t* a = AllocateBufferForInstruction(2 + 1);
+                    a[0] = 0x80;        // add rm8, imm8
+                    a[1] = ToXrm(3, 0, reg_dst);
+                    *(int8_t*)(a + 2) = value;
 
-            uint8_t* a = AllocateBufferForInstruction(3 + 4);
-            a[0] = 0x66;        // Operand size prefix
-            a[1] = 0x81;        // add rm32, imm32
-            a[2] = ToXrm(3, 0, reg_dst);
-            *(int32_t*)(a + 3) = value;
+                    if (i->assignment.type == AssignType::Subtract && constant_swapped) {
+                        uint8_t* neg = AllocateBufferForInstruction(2);
+                        neg[0] = 0xF6;  // neg rm8
+                        neg[1] = ToXrm(3, 3, reg_dst);
+                    }
+                    break;
+                }
+                case 2: {
+                    uint8_t* a = AllocateBufferForInstruction(2 + 2);
+                    a[0] = 0x81;        // add rm16, imm16
+                    a[1] = ToXrm(3, 0, reg_dst);
+                    *(int16_t*)(a + 2) = value;
 
-            if (i->assignment.type == AssignType::Subtract && constant_swapped) {
-                uint8_t* neg = AllocateBufferForInstruction(3);
-                neg[0] = 0x66;  // Operand size prefix
-                neg[1] = 0xF7;  // neg rm32
-                neg[2] = ToXrm(3, 3, reg_dst);
+                    if (i->assignment.type == AssignType::Subtract && constant_swapped) {
+                        uint8_t* neg = AllocateBufferForInstruction(2);
+                        neg[0] = 0xF7;  // neg rm16
+                        neg[1] = ToXrm(3, 3, reg_dst);
+                    }
+                    break;
+                }
+                case 4: {
+                    uint8_t* a = AllocateBufferForInstruction(3 + 4);
+                    a[0] = 0x66;        // Operand size prefix
+                    a[1] = 0x81;        // add rm32, imm32
+                    a[2] = ToXrm(3, 0, reg_dst);
+                    *(int32_t*)(a + 3) = value;
+
+                    if (i->assignment.type == AssignType::Subtract && constant_swapped) {
+                        uint8_t* neg = AllocateBufferForInstruction(3);
+                        neg[0] = 0x66;  // Operand size prefix
+                        neg[1] = 0xF7;  // neg rm32
+                        neg[2] = ToXrm(3, 3, reg_dst);
+                    }
+
+                    break;
+                }
+
+                default: ThrowOnUnreachableCode();
             }
             break;
         }
@@ -3009,7 +3063,7 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
         case ExpressionType::Constant: {
             int32_t value = atoi(i->assignment.op2.value);
 
-            SaveAndUnloadRegister(CpuRegister::AX);
+            SaveAndUnloadRegister(CpuRegister::AX, SaveReason::Inside);
             LoadConstantToRegister(value, CpuRegister::AX, dst_size);
 
             switch (dst_size) {
@@ -3038,7 +3092,7 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                 }
                 case 2: {
                     // DX register will be discarted after multiply
-                    SaveAndUnloadRegister(CpuRegister::DX);
+                    SaveAndUnloadRegister(CpuRegister::DX, SaveReason::Inside);
 
                     if (op1->reg != CpuRegister::None) {
                         // Register to register copy
@@ -3064,7 +3118,7 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                 }
                 case 4: {
                     // DX register will be discarted after multiply
-                    SaveAndUnloadRegister(CpuRegister::DX);
+                    SaveAndUnloadRegister(CpuRegister::DX, SaveReason::Inside);
 
                     if (op1->reg != CpuRegister::None) {
                         // Register to register copy
@@ -3142,7 +3196,7 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                 }
                 case 2: {
                     // DX register will be discarted after multiply
-                    SaveAndUnloadRegister(CpuRegister::DX);
+                    SaveAndUnloadRegister(CpuRegister::DX, SaveReason::Inside);
 
                     if (op2->reg != CpuRegister::None) {
                         // Register to register copy
@@ -3168,7 +3222,7 @@ void DosExeEmitter::EmitAssignMultiply(InstructionEntry* i)
                 }
                 case 4: {
                     // DX register will be discarted after multiply
-                    SaveAndUnloadRegister(CpuRegister::DX);
+                    SaveAndUnloadRegister(CpuRegister::DX, SaveReason::Inside);
 
                     if (op2->reg != CpuRegister::None) {
                         // Register to register copy
@@ -3219,7 +3273,7 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
         case ExpressionType::Constant: {
             int32_t value = atoi(i->assignment.op1.value);
 
-            SaveAndUnloadRegister(CpuRegister::AX);
+            SaveAndUnloadRegister(CpuRegister::AX, SaveReason::Inside);
             // Load with higher size than destination to clear upper/high part
             // of the register, so the register will be ready for division
             LoadConstantToRegister(value, CpuRegister::AX, dst_size * 2);
@@ -3297,7 +3351,7 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
         }
         case 2: {
             // DX register will be discarted after multiply
-            SaveAndUnloadRegister(CpuRegister::DX);
+            SaveAndUnloadRegister(CpuRegister::DX, SaveReason::Inside);
 
             ZeroRegister(CpuRegister::DX, 2);
 
@@ -3327,7 +3381,7 @@ void DosExeEmitter::EmitAssignDivide(InstructionEntry* i)
         }
         case 4: {
             // DX register will be discarted after multiply
-            SaveAndUnloadRegister(CpuRegister::DX);
+            SaveAndUnloadRegister(CpuRegister::DX, SaveReason::Inside);
 
             ZeroRegister(CpuRegister::DX, 4);
 
@@ -3395,7 +3449,7 @@ void DosExeEmitter::EmitAssignShift(InstructionEntry* i)
                 return;
             }
 
-            SaveAndUnloadRegister(CpuRegister::CL);
+            SaveAndUnloadRegister(CpuRegister::CL, SaveReason::Inside);
             LoadConstantToRegister(shift, CpuRegister::CL, 1);
             // ToDo: Use shl/shr rm8/16/32, imm8
             break;
@@ -3481,7 +3535,7 @@ void DosExeEmitter::EmitGoto(InstructionEntry* i)
     }
 
     // Unload all registers before jump
-    SaveAndUnloadAllRegisters(i->goto_statement.ip < ip_src);
+    SaveAndUnloadAllRegisters(SaveReason::Before);
 
     uint8_t* goto_ptr = nullptr;
 
@@ -3549,7 +3603,7 @@ void DosExeEmitter::EmitGotoLabel(InstructionEntry* i)
     }
 
     // Unload all registers before jump
-    SaveAndUnloadAllRegisters(it != labels.end());
+    SaveAndUnloadAllRegisters(SaveReason::Before);
 
     uint8_t* goto_ptr = nullptr;
 
@@ -3619,7 +3673,7 @@ void DosExeEmitter::EmitIf(InstructionEntry* i)
     }
 
     // Unload all registers before jump
-    SaveAndUnloadAllRegisters(i->if_statement.ip < ip_src);
+    SaveAndUnloadAllRegisters(SaveReason::Before);
 
     uint8_t* goto_ptr = nullptr;
 
@@ -4274,7 +4328,7 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
         }
     }
 
-    SaveAndUnloadAllRegisters(false);
+    SaveAndUnloadAllRegisters(SaveReason::Inside);
 
     // Emit "call" instruction
     {
@@ -4427,7 +4481,11 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
             SymbolTableEntry* param_decl = symbol_table;
             while (param_decl) {
                 if (param_decl->parameter != 0 && param_decl->parent && strcmp(param_decl->parent, parent->name) == 0) {
-                    stack_param_size += compiler->GetSymbolTypeSize(param_decl->type);
+                    int32_t size = compiler->GetSymbolTypeSize(param_decl->type);
+                    if (size < 2) {
+                        size = 2;
+                    }
+                    stack_param_size += size;
                 }
 
                 param_decl = param_decl->next;

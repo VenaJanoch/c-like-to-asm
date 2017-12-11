@@ -95,6 +95,12 @@ struct DosLabel {
     int32_t ip_dst;
 };
 
+enum struct SaveReason {
+    Before,     // Variable will be saved if it's referenced in current or one of the following instructions
+    Inside,     // Variable will be saved if it's referenced in one of the following instructions
+    Force       // Variable will be always saved to stack
+};
+
 
 #pragma pack(push, 1)
 
@@ -202,7 +208,8 @@ private:
     /// </summary>
     /// <param name="var">Variable descriptor</param>
     /// <returns>Instruction with reference</returns>
-    InstructionEntry* FindNextVariableReference(DosVariableDescriptor* var);
+    /// <param name="reason">Save reason</param>
+    InstructionEntry* FindNextVariableReference(DosVariableDescriptor* var, SaveReason reason);
 
     /// <summary>
     /// Find the end of current function
@@ -215,7 +222,8 @@ private:
     /// </summary>
     /// <param name="var">Variable descriptor</param>
     /// <param name="force">Force save (don't check references)</param>
-    void SaveVariable(DosVariableDescriptor* var, bool force);
+    /// <param name="reason">Save reason</param>
+    void SaveVariable(DosVariableDescriptor* var, SaveReason reason);
 
     void SaveIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, CpuRegister reg_dst);
 
@@ -223,12 +231,14 @@ private:
     /// Save variable which uses specified register and unreference it
     /// </summary>
     /// <param name="reg">Register to unreference</param>
-    void SaveAndUnloadRegister(CpuRegister reg);
+    /// <param name="reason">Save reason</param>
+    void SaveAndUnloadRegister(CpuRegister reg, SaveReason reason);
 
     /// <summary>
     /// Save all unsaved variables to stack and unreference all registers
     /// </summary>
-    void SaveAndUnloadAllRegisters(bool force);
+    /// <param name="reason">Save reason</param>
+    void SaveAndUnloadAllRegisters(SaveReason reason);
 
     /// <summary>
     /// Destroy connection of variable with register
