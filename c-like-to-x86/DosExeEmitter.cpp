@@ -1965,16 +1965,24 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
 
     int32_t var_size = compiler->GetSymbolTypeSize(var->symbol->type);
 
-    if (var->reg != CpuRegister::None && (var_size >= desired_size || var->reg != reg_dst)) {
-        // Variable is already in desired register with desired size
-        if (var->reg == reg_dst) {
+    if (var->reg != CpuRegister::None) {
+        if (var->reg == reg_dst && var_size >= desired_size) {
+            // Variable is already in desired register with desired size
             SaveVariable(var, SaveReason::Inside);
             var->reg = CpuRegister::None;
             return;
         }
 
-        // Variable is in another register
-        SaveAndUnloadRegister(reg_dst, SaveReason::Inside);
+        CpuRegister reg_src = var->reg;
+
+        if (var->reg == reg_dst) {
+            // Variable is in desired register, remove ownership
+            SaveVariable(var, SaveReason::Inside);
+            var->reg = CpuRegister::None;
+        } else {
+            // Variable is in another register
+            SaveAndUnloadRegister(reg_dst, SaveReason::Inside);
+        }
 
         // Copy value to desired register
         switch (var_size) {
@@ -1984,16 +1992,16 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                     a[0] = 0x66;    // Operand size prefix
                     a[1] = 0x0F;
                     a[2] = 0xB6;    // movzx r32, rm8 (i386+)
-                    a[3] = ToXrm(3, reg_dst, var->reg);
+                    a[3] = ToXrm(3, reg_dst, reg_src);
                 } else if (desired_size == 2) {
                     uint8_t* a = AllocateBufferForInstruction(3);
                     a[0] = 0x0F;
                     a[1] = 0xB6;    // movzx r16, rm8 (i386+)
-                    a[2] = ToXrm(3, reg_dst, var->reg);
+                    a[2] = ToXrm(3, reg_dst, reg_src);
                 } else {
                     uint8_t* a = AllocateBufferForInstruction(2);
                     a[0] = 0x8A;    // mov r8, rm8
-                    a[1] = ToXrm(3, reg_dst, var->reg);
+                    a[1] = ToXrm(3, reg_dst, reg_src);
                 }
                 break;
             }
@@ -2003,11 +2011,11 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                     a[0] = 0x66;    // Operand size prefix
                     a[1] = 0x0F;
                     a[2] = 0xB7;    // movzx r32, rm16 (i386+)
-                    a[3] = ToXrm(3, reg_dst, var->reg);
+                    a[3] = ToXrm(3, reg_dst, reg_src);
                 } else {
                     uint8_t* a = AllocateBufferForInstruction(2);
                     a[0] = 0x8B;   // mov r16, rm16
-                    a[1] = ToXrm(3, reg_dst, var->reg);
+                    a[1] = ToXrm(3, reg_dst, reg_src);
                 }
                 break;
             }
@@ -2015,7 +2023,7 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                 uint8_t* a = AllocateBufferForInstruction(3);
                 a[0] = 0x66;        // Operand size prefix
                 a[1] = 0x8B;        // mov r32, rm32
-                a[2] = ToXrm(3, reg_dst, var->reg);
+                a[2] = ToXrm(3, reg_dst, reg_src);
                 break;
             }
 
@@ -2024,25 +2032,13 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
         return;
     }
 
-    if (var_size < desired_size) {
-        // Expansion is needed
-        if (var->reg == reg_dst) {
-            // Variable is already in register with smaller size
-            SaveVariable(var, SaveReason::Inside);
-        } else {
-            // Variable is on the stack
-            SaveAndUnloadRegister(reg_dst, SaveReason::Inside);
-        }
-    } else {
-        // Variable is on the stack
-        SaveAndUnloadRegister(reg_dst, SaveReason::Inside);
-    }
+    SaveAndUnloadRegister(reg_dst, SaveReason::Inside);
 
     switch (var_size) {
         case 1: {
             if (desired_size == 4) {
                 if (!var->symbol->parent) {
-                    // Static push (16-bit range)
+                    // Static to register copy (16-bit range)
                     uint8_t* a = AllocateBufferForInstruction(4 + 2);
                     a[0] = 0x66;    // Operand size prefix
                     a[1] = 0x0F;
@@ -2062,7 +2058,7 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                 }
             } else if (desired_size == 2) {
                 if (!var->symbol->parent) {
-                    // Static push (16-bit range)
+                    // Static to register copy (16-bit range)
                     uint8_t* a = AllocateBufferForInstruction(3 + 2);
                     a[0] = 0x0F;
                     a[1] = 0xB6;    // movzx r16, rm8 (i386+)
@@ -2080,7 +2076,7 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
                 }
             } else {
                 if (!var->symbol->parent) {
-                    // Static push (16-bit range)
+                    // Static to register copy (16-bit range)
                     uint8_t* a = AllocateBufferForInstruction(2 + 2);
                     a[0] = 0x8A;   // mov r8, rm8
                     a[1] = ToXrm(0, reg_dst, 6);
@@ -2100,25 +2096,27 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
         case 2: {
             if (desired_size == 4) {
                 if (!var->symbol->parent) {
-                    // Static push (16-bit range)
-                    uint8_t* a = AllocateBufferForInstruction(3 + 2);
-                    a[0] = 0x0F;
-                    a[1] = 0xB7;    // movzx r32, rm16 (i386+)
-                    a[2] = ToXrm(0, reg_dst, 6);
+                    // Static to register copy (16-bit range)
+                    uint8_t* a = AllocateBufferForInstruction(4 + 2);
+                    a[0] = 0x66;   // Operand size prefix
+                    a[1] = 0x0F;
+                    a[2] = 0xB7;    // movzx r32, rm16 (i386+)
+                    a[3] = ToXrm(0, reg_dst, 6);
 
-                    BackpatchStatic(a + 3, var);
+                    BackpatchStatic(a + 4, var);
                 } else {
                     // Stack to register copy (8-bit range)
-                    uint8_t* a = AllocateBufferForInstruction(3 + 1);
-                    a[0] = 0x0F;
-                    a[1] = 0xB7;    // movzx r32, rm16 (i386+)
-                    a[2] = ToXrm(1, reg_dst, 6);
+                    uint8_t* a = AllocateBufferForInstruction(4 + 1);
+                    a[0] = 0x66;   // Operand size prefix
+                    a[1] = 0x0F;
+                    a[2] = 0xB7;    // movzx r32, rm16 (i386+)
+                    a[3] = ToXrm(1, reg_dst, 6);
 
-                    BackpatchLocal(a + 3, var);
+                    BackpatchLocal(a + 4, var);
                 }
             } else {
                 if (!var->symbol->parent) {
-                    // Static push (16-bit range)
+                    // Static to register copy (16-bit range)
                     uint8_t* a = AllocateBufferForInstruction(2 + 2);
                     a[0] = 0x8B;   // mov r16, rm16
                     a[1] = ToXrm(0, reg_dst, 6);
@@ -2137,7 +2135,7 @@ void DosExeEmitter::CopyVariableToRegister(DosVariableDescriptor* var, CpuRegist
         }
         case 4: {
             if (!var->symbol->parent) {
-                // Static push (16-bit range)
+                // Static to register copy (16-bit range)
                 uint8_t* a = AllocateBufferForInstruction(3 + 2);
                 a[0] = 0x66;   // Operand size prefix
                 a[1] = 0x8B;   // mov r32, rm32
