@@ -4363,6 +4363,8 @@ void DosExeEmitter::EmitCall(InstructionEntry* i, SymbolTableEntry* symbol_table
         // Set register of return variable to AX
         DosVariableDescriptor* ret = FindVariableByName(i->call_statement.return_symbol);
         ret->reg = CpuRegister::AX;
+        ret->is_dirty = true;
+        ret->last_used = ip_src;
     }
 }
 
