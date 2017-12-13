@@ -43,7 +43,8 @@
 #define CheckIsInt(exp, message, loc)                                       \
     if (exp.type.base != BaseSymbolType::Uint8  &&                          \
         exp.type.base != BaseSymbolType::Uint16 &&                          \
-        exp.type.base != BaseSymbolType::Uint32) {                          \
+        exp.type.base != BaseSymbolType::Uint32 &&                          \
+        exp.type.pointer == 0) {                                            \
         throw CompilerException(CompilerExceptionSource::Statement,         \
             message, loc.first_line, loc.first_column);                     \
     }   
@@ -58,7 +59,14 @@
     if (exp.type.base != BaseSymbolType::Uint8  &&                          \
         exp.type.base != BaseSymbolType::Uint16 &&                          \
         exp.type.base != BaseSymbolType::Uint32 &&                          \
+        exp.type.pointer == 0 &&                                            \
         exp.type.base != BaseSymbolType::Bool) {                            \
+        throw CompilerException(CompilerExceptionSource::Statement,         \
+            message, loc.first_line, loc.first_column);                     \
+    }
+
+#define CheckIsNotPointer(exp, message, loc)                                \
+    if (exp.type.pointer != 0) {                                            \
         throw CompilerException(CompilerExceptionSource::Statement,         \
             message, loc.first_line, loc.first_column);                     \
     }

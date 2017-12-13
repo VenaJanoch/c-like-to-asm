@@ -1176,6 +1176,9 @@ expression
             CheckIsInt($1, "Only integer types are allowed in shift operations", @1);
             CheckIsInt($3, "Only integer types are allowed in shift operations", @3);
 
+			CheckIsNotPointer($1, "Pointers are not allowed in shift operations", @1);
+			CheckIsNotPointer($3, "Pointers are not allowed in shift operations", @3);
+
 			// Move indexed variables to temp. variables
 			PrepareIndexedVariableIfNeeded($1);
 			PrepareIndexedVariableIfNeeded($3);
@@ -1199,6 +1202,9 @@ expression
 
             CheckIsInt($1, "Only integer types are allowed in shift operations", @1);
             CheckIsInt($3, "Only integer types are allowed in shift operations", @3);
+
+			CheckIsNotPointer($1, "Pointers are not allowed in shift operations", @1);
+			CheckIsNotPointer($3, "Pointers are not allowed in shift operations", @3);
         
 			// Move indexed variables to temp. variables
 			PrepareIndexedVariableIfNeeded($1);
@@ -1241,8 +1247,8 @@ expression
 				if ($1.type.pointer > 0 || $3.type.pointer > 0) {
 					// Pointer arithmetic
 					if ($1.type.pointer > 0 && $3.type.pointer > 0) {
-						// ToDo
-						ThrowOnUnreachableCode();
+						throw CompilerException(CompilerExceptionSource::Statement,
+							"Cannot use two pointer operands in this context", @1.first_line, @1.first_column);
 					}
 
 					if ($1.type.pointer > 0) {
@@ -1285,8 +1291,8 @@ expression
 			if ($1.type.pointer > 0 || $3.type.pointer > 0) {
 				// Pointer arithmetic
 				if ($1.type.pointer > 0 && $3.type.pointer > 0) {
-					// ToDo
-					ThrowOnUnreachableCode();
+					throw CompilerException(CompilerExceptionSource::Statement,
+						"Cannot use two pointer operands in this context", @1.first_line, @1.first_column);
 				}
 
 				if ($1.type.pointer > 0) {
@@ -1324,6 +1330,9 @@ expression
         {
             LogDebug("P: Processing multiplication");
 
+			CheckIsNotPointer($1, "Pointers are not allowed in this context", @1);
+			CheckIsNotPointer($3, "Pointers are not allowed in this context", @3);
+
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
             if (type.base == BaseSymbolType::Unknown) {
                 throw CompilerException(CompilerExceptionSource::Statement,
@@ -1351,6 +1360,9 @@ expression
         {
             LogDebug("P: Processing division");
 
+			CheckIsNotPointer($1, "Pointers are not allowed in this context", @1);
+			CheckIsNotPointer($3, "Pointers are not allowed in this context", @3);
+
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
             if (type.base == BaseSymbolType::Unknown) {
                 throw CompilerException(CompilerExceptionSource::Statement,
@@ -1377,6 +1389,9 @@ expression
     | expression '%' expression
         {
             LogDebug("P: Processing remainder");
+
+			CheckIsNotPointer($1, "Pointers are not allowed in this context", @1);
+			CheckIsNotPointer($3, "Pointers are not allowed in this context", @3);
 
             SymbolType type = c.GetLargestTypeForArithmetic($1.type, $3.type);
             if (type.base == BaseSymbolType::Unknown) {
