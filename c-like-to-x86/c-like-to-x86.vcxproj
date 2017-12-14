@@ -151,6 +151,8 @@
     <ClInclude Include="Compiler.h" />
     <ClInclude Include="CompilerException.h" />
     <ClInclude Include="DosExeEmitter.h" />
+    <ClInclude Include="GenericEmitter.h" />
+    <ClInclude Include="i386Emitter.h" />
     <ClInclude Include="InstructionEntry.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="parser.tab.h" />
@@ -164,6 +166,8 @@
   <ItemGroup>
     <ClCompile Include="Compiler.cpp" />
     <ClCompile Include="DosExeEmitter.cpp" />
+    <ClCompile Include="GenericEmitter.cpp" />
+    <ClCompile Include="i386Emitter.cpp" />
     <ClCompile Include="lexer.flex.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="Main.cpp" />

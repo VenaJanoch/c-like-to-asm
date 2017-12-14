@@ -52,7 +52,7 @@ void DosExeEmitter::EmitMzHeader()
 
 void DosExeEmitter::EmitInstructions(InstructionEntry* instruction_stream)
 {
-    Log::Write(LogType::Info, "Compiling intermediate code to x86 instructions...");
+    Log::Write(LogType::Info, "Compiling intermediate code to i386 machine code...");
     Log::PushIndent();
     Log::PushIndent();
 
@@ -176,13 +176,7 @@ void DosExeEmitter::EmitSharedFunctions()
 
     // Emit only referenced functions
     EmitSharedFunction("PrintUint32", [&]() {
-        //   Create new call frame
-        uint8_t* l1 = AllocateBufferForInstruction(2 + 3);
-        l1[0] = 0x66;                               // Operand size prefix
-        l1[1] = ToOpR(0x50, CpuRegister::BP);       // push ebp
-        l1[2] = 0x66;                               // Operand size prefix
-        l1[3] = 0x8B;                               // mov r32 (ebp), rm32 (esp)
-        l1[4] = ToXrm(3, CpuRegister::BP, CpuRegister::SP);
+        AsmProcEnter();
 
         //   mov eax, ss:[bp + 6]
         uint8_t* l2 = AllocateBufferForInstruction(4);
@@ -191,18 +185,8 @@ void DosExeEmitter::EmitSharedFunctions()
         l2[2] = ToXrm(1, CpuRegister::AX, 6);
         l2[3] = (int8_t)6;
 
-        //   mov ecx, 10
-        uint8_t* l3 = AllocateBufferForInstruction(3 + 4);
-        l3[0] = 0x66;   // Operand size prefix
-        l3[1] = 0xC7;   // mov rm32, imm32
-        l3[2] = ToXrm(3, 0, CpuRegister::CX);
-        *(uint32_t*)(l3 + 3) = 10;
-
-        //   mov di, 20
-        uint8_t* l4 = AllocateBufferForInstruction(2 + 2);
-        l4[0] = 0xC7;   // mov rm32, imm32
-        l4[1] = ToXrm(3, 0, CpuRegister::DI);
-        *(uint16_t*)(l4 + 2) = 20;
+        LoadConstantToRegister(10, CpuRegister::CX, 4);
+        LoadConstantToRegister(20, CpuRegister::DI, 2);
 
         //   mov [buffer + DI], '$'
         uint8_t* l5 = AllocateBufferForInstruction(2 + 2 + 1);
@@ -213,11 +197,8 @@ void DosExeEmitter::EmitSharedFunctions()
 
         uint32_t loop = ip_dst;
 
-        //   dec di
-        uint8_t* l6 = AllocateBufferForInstruction(1);
-        l6[0] = ToOpR(0x48, CpuRegister::DI);   // dec r16
+        AsmDec(CpuRegister::DI, 2);
 
-        //   xor edx, edx
         ZeroRegister(CpuRegister::DX, 4);
 
         //   div ecx
@@ -250,42 +231,17 @@ void DosExeEmitter::EmitSharedFunctions()
         l11[0] = 0x75;   // jnz rel8
         *(int8_t*)(l11 + 1) = (int8_t)(loop - ip_dst);
 
-        //   mov dx, [buffer]
-        uint8_t* l12 = AllocateBufferForInstruction(1 + 2);
-        l12[0] = ToOpR(0xB8, CpuRegister::DX);  // mov r16, imm16
-        *(uint16_t*)(l12 + 1) = io_buffer_address;
+        LoadConstantToRegister(io_buffer_address, CpuRegister::DX, 2);
 
-        //   add dx, di
-        uint8_t* l13 = AllocateBufferForInstruction(2);
-        l13[0] = 0x01;  // add rm16, r16
-        l13[1] = ToXrm(3, CpuRegister::DI, CpuRegister::DX);
+        AsmAdd(CpuRegister::DX, CpuRegister::DI, 2);
 
-        //   int 21h
-        uint8_t* l14 = AllocateBufferForInstruction(4);
-        l14[0] = 0xB4;  // mov ah, imm8
-        l14[1] = 0x09;  //  Write String To Stdout
-        l14[2] = 0xCD;  // int imm8
-        l14[3] = 0x21;  //  DOS Function Dispatcher
+        AsmInt(0x21 /*DOS Function Dispatcher*/, 0x09 /*Write String To Stdout*/);
 
-        //   Destroy current call frame
-        uint8_t* l15 = AllocateBufferForInstruction(2);
-        l15[0] = 0x66;                              // Operand size prefix
-        l15[1] = ToOpR(0x58, CpuRegister::BP);      // pop ebp
-
-        //   retn 4
-        uint8_t* ret = AllocateBufferForInstruction(3);
-        ret[0] = 0xC2;
-        *(uint16_t*)(ret + 1) = 4;
+        AsmProcLeave(4);
     });
 
     EmitSharedFunction("PrintString", [&]() {
-        //   Create new call frame
-        uint8_t* l1 = AllocateBufferForInstruction(2 + 3);
-        l1[0] = 0x66;                           // Operand size prefix
-        l1[1] = ToOpR(0x50, CpuRegister::BP);   // push ebp
-        l1[2] = 0x66;                           // Operand size prefix
-        l1[3] = 0x8B;                           // mov r32 (ebp), rm32 (esp)
-        l1[4] = ToXrm(3, CpuRegister::BP, CpuRegister::SP);
+        AsmProcEnter();
 
         //   mov dx, ss:[bp + 6]
         uint8_t* l2 = AllocateBufferForInstruction(3);
@@ -293,10 +249,7 @@ void DosExeEmitter::EmitSharedFunctions()
         l2[1] = ToXrm(1, CpuRegister::DX, 6);
         l2[2] = (int8_t)6;
 
-        //   mov si, dx
-        uint8_t* l3 = AllocateBufferForInstruction(2);
-        l3[0] = 0x8B;   // mov r16, rm16
-        l3[1] = ToXrm(3, CpuRegister::SI, CpuRegister::DX);
+        AsmMov(CpuRegister::SI, CpuRegister::DX, 2);
 
         uint32_t loop = ip_dst;
 
@@ -305,23 +258,16 @@ void DosExeEmitter::EmitSharedFunctions()
         l4[0] = 0x8A;   // mov r8, rm8
         l4[1] = ToXrm(0, CpuRegister::BL, 4);
 
-        //   inc si
-        uint8_t* l5 = AllocateBufferForInstruction(1);
-        l5[0] = ToOpR(0x40, CpuRegister::SI);   // inc r16
+        AsmInc(CpuRegister::SI, 2);
 
-        //   or bl, bl
-        uint8_t* l6 = AllocateBufferForInstruction(2);
-        l6[0] = 0x08;   // or rm8, r8
-        l6[1] = ToXrm(3, CpuRegister::BL, CpuRegister::BL);
+        AsmOr(CpuRegister::BL, CpuRegister::BL, 1);
 
         //   jnz [loop]
         uint8_t* l7 = AllocateBufferForInstruction(2);
         l7[0] = 0x75;   // jnz rel8
         l7[1] = (int8_t)(loop - ip_dst);
 
-        //   dec si
-        uint8_t* l8 = AllocateBufferForInstruction(1);
-        l8[0] = ToOpR(0x48, CpuRegister::SI);   // dec r16
+        AsmDec(CpuRegister::SI, 2);
 
         //   mov [SI], '$'
         uint8_t* l9 = AllocateBufferForInstruction(3);
@@ -329,27 +275,14 @@ void DosExeEmitter::EmitSharedFunctions()
         l9[1] = ToXrm(0, 0, 4);
         l9[2] = '$';
 
-        //   int 21h
-        uint8_t* l10 = AllocateBufferForInstruction(4);
-        l10[0] = 0xB4;   // mov ah, imm8
-        l10[1] = 0x09;   //  Write String To Stdout
-        l10[2] = 0xCD;   // int imm8
-        l10[3] = 0x21;   //  DOS Function Dispatcher
+        AsmInt(0x21 /*DOS Function Dispatcher*/, 0x09 /*Write String To Stdout*/);
 
         //   mov [SI], bl
         uint8_t* l11 = AllocateBufferForInstruction(2);
         l11[0] = 0x88;   // mov rm8, r8
         l11[1] = ToXrm(0, CpuRegister::BL, 4);
 
-        //   Destroy current call frame
-        uint8_t* l12 = AllocateBufferForInstruction(2);
-        l12[0] = 0x66;                          // Operand size prefix
-        l12[1] = ToOpR(0x58, CpuRegister::BP);  // pop ebp
-
-        //   retn 2
-        uint8_t* ret = AllocateBufferForInstruction(3);
-        ret[0] = 0xC2;
-        *(uint16_t*)(ret + 1) = 2;
+        AsmProcLeave(2);
     });
 
     EmitSharedFunction("PrintNewLine", [&]() {
@@ -361,21 +294,11 @@ void DosExeEmitter::EmitSharedFunctions()
         *(uint16_t*)(l1 + 3) = io_buffer_address;
         *(uint32_t*)(l1 + 5) = 0x00240A0D;      // '\r\n$\0'
 
-        //   mov dx, [buffer]
-        uint8_t* l2 = AllocateBufferForInstruction(1 + 2);
-        l2[0] = ToOpR(0xB8, CpuRegister::DX);   // mov dx, imm16
-        *(uint16_t*)(l2 + 1) = io_buffer_address;
+        LoadConstantToRegister(io_buffer_address, CpuRegister::DX, 2);
 
-        //   int 21h
-        uint8_t* l3 = AllocateBufferForInstruction(4);
-        l3[0] = 0xB4;   // mov ah, imm8
-        l3[1] = 0x09;   //  Write String To Stdout
-        l3[2] = 0xCD;   // int imm8
-        l3[3] = 0x21;   //  DOS Function Dispatcher
+        AsmInt(0x21 /*DOS Function Dispatcher*/, 0x09 /*Write String To Stdout*/);
 
-        //   retn
-        uint8_t* ret = AllocateBufferForInstruction(1);
-        ret[0] = 0xC3;
+        AsmProcLeaveNoArgs(0);
     });
 
     EmitSharedFunction("ReadUint32", [&]() {
@@ -386,36 +309,15 @@ void DosExeEmitter::EmitSharedFunctions()
         *(uint16_t*)(l1 + 2) = io_buffer_address;
         *(uint16_t*)(l1 + 4) = io_buffer_size;
 
-        //   mov dx, [buffer]
-        uint8_t* l2 = AllocateBufferForInstruction(1 + 2);
-        l2[0] = ToOpR(0xB8, CpuRegister::DX);   // mov r16, imm16
-        *(uint16_t*)(l2 + 1) = io_buffer_address;
+        LoadConstantToRegister(io_buffer_address, CpuRegister::DX, 2);
 
-        //   int 21h
-        uint8_t* l3 = AllocateBufferForInstruction(4);
-        l3[0] = 0xB4;  // mov ah, imm8
-        l3[1] = 0x0A;  //  Buffered Keyboard Input
-        l3[2] = 0xCD;  // int imm8
-        l3[3] = 0x21;  //  DOS Function Dispatcher
+        AsmInt(0x21 /*DOS Function Dispatcher*/, 0x0A /*Buffered Keyboard Input*/);
 
-        //   xor eax, eax
         ZeroRegister(CpuRegister::AX, 4);
-
-        //   xor edx, edx
         ZeroRegister(CpuRegister::BX, 4);
 
-        //   mov si, 2
-        uint8_t* l4 = AllocateBufferForInstruction(2 + 2);
-        l4[0] = 0xC7;   // mov rm32, imm32
-        l4[1] = ToXrm(3, 0, CpuRegister::SI);
-        *(uint16_t*)(l4 + 2) = 2;
-
-        //   mov ecx, 10
-        uint8_t* l5 = AllocateBufferForInstruction(3 + 4);
-        l5[0] = 0x66;   // Operand size prefix
-        l5[1] = 0xC7;   // mov rm32, imm32
-        l5[2] = ToXrm(3, 0, CpuRegister::CX);
-        *(uint32_t*)(l5 + 3) = 10;
+        LoadConstantToRegister(2, CpuRegister::SI, 2);
+        LoadConstantToRegister(10, CpuRegister::CX, 4);
 
         uint32_t loop = ip_dst;
 
@@ -457,15 +359,9 @@ void DosExeEmitter::EmitSharedFunctions()
         l12[1] = 0xF7;  // mul eax, rm32
         l12[2] = ToXrm(3, 4, CpuRegister::CX);
 
-        //   add eax, ebx
-        uint8_t* l13 = AllocateBufferForInstruction(3);
-        l13[0] = 0x66;  // Operand size prefix
-        l13[1] = 0x01;  // add rm32, r32
-        l13[2] = ToXrm(3, CpuRegister::BX, CpuRegister::AX);
+        AsmAdd(CpuRegister::AX, CpuRegister::BX, 4);
 
-        //   inc si
-        uint8_t* l14 = AllocateBufferForInstruction(1);
-        l14[0] = ToOpR(0x40, CpuRegister::SI);  // inc r16
+        AsmInc(CpuRegister::SI, 2);
 
         //   jmp [loop]
         uint8_t* l15 = AllocateBufferForInstruction(1 + 1);
@@ -477,18 +373,10 @@ void DosExeEmitter::EmitSharedFunctions()
         *(buffer + l9_offset) = (int8_t)(end - l9_ip);
         *(buffer + l11_offset) = (int8_t)(end - l11_ip);
 
-        //   retn
-        uint8_t* ret = AllocateBufferForInstruction(1);
-        ret[0] = 0xC3;
+        AsmProcLeaveNoArgs(0);
     });
 
     EmitSharedFunction("GetCommandLine", [&]() {
-        //   mov cl, [0x80]
-        //uint8_t* l1 = AllocateBufferForInstruction(2 + 2);
-        //l1[0] = 0x8A;    // mov r8, rm8
-        //l1[1] = ToXrm(0, CpuRegister::CL, 6);
-        //*(uint16_t*)(l1 + 2) = 0x80;
-
         //   mov si, (0x81 - 1)
         LoadConstantToRegister(0x81 - 1, CpuRegister::SI, 2);
 
@@ -511,21 +399,14 @@ void DosExeEmitter::EmitSharedFunctions()
         l5[1] = (int8_t)(loop1 - ip_dst);
 
         // Save starting address to AX
-        //   mov ax, si
-        uint8_t* l6 = AllocateBufferForInstruction(2);
-        l6[0] = 0x8B;   // mov r16, rm16
-        l6[1] = ToXrm(3, CpuRegister::AX, CpuRegister::SI);
+        AsmMov(CpuRegister::AX, CpuRegister::SI, 2);
 
-        //   dec si
-        uint8_t* l7 = AllocateBufferForInstruction(1);
-        l7[0] = ToOpR(0x48, CpuRegister::SI);   // dec r16
+        AsmDec(CpuRegister::SI, 2);
 
         uint32_t loop2 = ip_dst;
 
         // Go forward and find CR
-        //   inc si
-        uint8_t* l8 = AllocateBufferForInstruction(1);
-        l8[0] = ToOpR(0x40, CpuRegister::SI);   // inc r16
+        AsmInc(CpuRegister::SI, 2);
 
         //   cmp [si], '\r'
         uint8_t* l9 = AllocateBufferForInstruction(2 + 1);
@@ -541,9 +422,7 @@ void DosExeEmitter::EmitSharedFunctions()
         uint32_t loop3 = ip_dst;
 
         // Go backward and find first non-whitespace character
-        //   dec si
-        uint8_t* l11 = AllocateBufferForInstruction(1);
-        l11[0] = ToOpR(0x48, CpuRegister::SI);   // dec r16
+        AsmDec(CpuRegister::SI, 2);
 
         //   cmp [si], ' '
         uint8_t* l12 = AllocateBufferForInstruction(2 + 1);
@@ -556,9 +435,7 @@ void DosExeEmitter::EmitSharedFunctions()
         l13[0] = 0x74;   // jz rel8
         l13[1] = (int8_t)(loop3 - ip_dst);
 
-        //   inc si
-        uint8_t* l14 = AllocateBufferForInstruction(1);
-        l14[0] = ToOpR(0x40, CpuRegister::SI);   // inc r16
+        AsmInc(CpuRegister::SI, 2);
 
         //   mov [si], '\0'
         uint8_t* l15 = AllocateBufferForInstruction(2 + 1);
@@ -566,19 +443,11 @@ void DosExeEmitter::EmitSharedFunctions()
         l15[1] = ToXrm(0, 0, 4);
         l15[2] = 0x00;   // '\0'
 
-        //   retn
-        uint8_t* ret = AllocateBufferForInstruction(1);
-        ret[0] = 0xC3;
+        AsmProcLeaveNoArgs(0);
     });
 
     EmitSharedFunction("#StringsEqual", [&]() {
-        //   Create new call frame
-        uint8_t* l1 = AllocateBufferForInstruction(2 + 3);
-        l1[0] = 0x66;                           // Operand size prefix
-        l1[1] = ToOpR(0x50, CpuRegister::BP);   // push ebp
-        l1[2] = 0x66;                           // Operand size prefix
-        l1[3] = 0x8B;                           // mov r32 (ebp), rm32 (esp)
-        l1[4] = ToXrm(3, CpuRegister::BP, CpuRegister::SP);
+        AsmProcEnter();
 
         //   mov si, ss:[bp + 6]
         uint8_t* l2 = AllocateBufferForInstruction(3);
@@ -604,15 +473,11 @@ void DosExeEmitter::EmitSharedFunctions()
         uint32_t l5_ip = ip_dst;
         uint32_t l5_offset = (l5 + 1) - buffer;
 
-        //   dec di
-        uint8_t* l6 = AllocateBufferForInstruction(1);
-        l6[0] = ToOpR(0x48, CpuRegister::DI);   // dec r16
+        AsmDec(CpuRegister::DI, 2);
 
         uint8_t loop = ip_dst;
 
-        //   inc di
-        uint8_t* l7 = AllocateBufferForInstruction(1);
-        l7[0] = ToOpR(0x40, CpuRegister::DI);   // inc r16
+        AsmInc(CpuRegister::DI, 2);
 
         //   lodsb
         uint8_t* l8 = AllocateBufferForInstruction(1);
@@ -645,10 +510,7 @@ void DosExeEmitter::EmitSharedFunctions()
         uint32_t equal = ip_dst;
         *(buffer + l5_offset) = (int8_t)(equal - l5_ip);
 
-        //   mov al, 1
-        uint8_t* l13 = AllocateBufferForInstruction(1 + 1);
-        l13[0] = ToOpR(0xB0, CpuRegister::AL);  // mov r8, imm8
-        l13[1] = 1;
+        LoadConstantToRegister(1, CpuRegister::AL, 1);
 
         //   jmp [end]
         uint8_t* l14 = AllocateBufferForInstruction(1 + 1);
@@ -662,34 +524,19 @@ void DosExeEmitter::EmitSharedFunctions()
         uint32_t not_equal = ip_dst;
         *(buffer + l10_offset) = (int8_t)(not_equal - l10_ip);
 
-        //   xor al, al
         ZeroRegister(CpuRegister::AL, 1);
 
         // Backpatch "end" jump, offset is known now
         uint32_t end = ip_dst;
         *(buffer + l14_offset) = (int8_t)(end - l14_ip);
 
-        //   Destroy current call frame
-        uint8_t* l15 = AllocateBufferForInstruction(2);
-        l15[0] = 0x66;                          // Operand size prefix
-        l15[1] = ToOpR(0x58, CpuRegister::BP);  // pop ebp
-
-        //   retn 4
-        uint8_t* ret = AllocateBufferForInstruction(3);
-        ret[0] = 0xC2;
-        *(uint16_t*)(ret + 1) = 4;
+        AsmProcLeave(4);
     });
 
     // ToDo: Release allocated block on failure
     // ToDo: Check (ptr + bytes) is fully accessible; if it's not, release and return null
     EmitSharedFunction("#Alloc", [&]() {
-        //   Create new call frame
-        uint8_t* l1 = AllocateBufferForInstruction(2 + 3);
-        l1[0] = 0x66;                           // Operand size prefix
-        l1[1] = ToOpR(0x50, CpuRegister::BP);   // push ebp
-        l1[2] = 0x66;                           // Operand size prefix
-        l1[3] = 0x8B;                           // mov r32 (ebp), rm32 (esp)
-        l1[4] = ToXrm(3, CpuRegister::BP, CpuRegister::SP);
+        AsmProcEnter();
 
         //   mov ebx, ss:[bp + 6]
         uint8_t* l2 = AllocateBufferForInstruction(4);
@@ -698,10 +545,7 @@ void DosExeEmitter::EmitSharedFunctions()
         l2[2] = ToXrm(1, CpuRegister::BX, 6);
         l2[3] = (int8_t)6;
 
-        //   or bx, bx
-        uint8_t* l3 = AllocateBufferForInstruction(2);
-        l3[0] = 0x0B;   // or r16, rm16
-        l3[1] = ToXrm(3, CpuRegister::BX, CpuRegister::BX);
+        AsmOr(CpuRegister::BX, CpuRegister::BX, 2);
 
         //   jz [ret_null]
         uint8_t* l4 = AllocateBufferForInstruction(2);
@@ -738,13 +582,7 @@ void DosExeEmitter::EmitSharedFunctions()
         l8[1] = ToXrm(3, 5, CpuRegister::BX);
         l8[2] = 4;
 
-        // Call DOS Function Dispatcher
-        //   int 21h
-        uint8_t* l9 = AllocateBufferForInstruction(4);
-        l9[0] = 0xB4;   // mov ah, imm8
-        l9[1] = 0x48;   //  Allocate memory
-        l9[2] = 0xCD;   // int imm8
-        l9[3] = 0x21;   //  DOS Function Dispatcher
+        AsmInt(0x21 /*DOS Function Dispatcher*/, 0x48 /*Allocate Memory*/);
 
         // Allocation failed
         //   jb/jc [ret_null]
@@ -768,15 +606,9 @@ void DosExeEmitter::EmitSharedFunctions()
         uint32_t l12_ip = ip_dst;
         uint32_t l12_offset = (l12 + 1) - buffer;
 
-        //   mov bx, ds
-        uint8_t* l13 = AllocateBufferForInstruction(2);
-        l13[0] = 0x8C;  // mov r16, sreg
-        l13[1] = ToXrm(3, CpuSegment::DS, CpuRegister::BX);
+        AsmMov(CpuRegister::BX, CpuSegment::DS);
 
-        //   sub ax, bx
-        uint8_t* l14 = AllocateBufferForInstruction(2);
-        l14[0] = 0x2B;  // sub r16, rm16
-        l14[1] = ToXrm(3, CpuRegister::AX, CpuRegister::BX);
+        AsmSub(CpuRegister::AX, CpuRegister::BX, 2);
 
         // Segment too far to use
         //   jb [ret_null]
@@ -800,7 +632,7 @@ void DosExeEmitter::EmitSharedFunctions()
         uint32_t l17_ip = ip_dst;
         uint32_t l17_offset = (l17 + 1) - buffer;
 
-        // ret_null:
+    // ret_null:
         uint32_t ret_null = ip_dst;
         *(buffer + l4_offset) = (int8_t)(ret_null - l4_ip);
         *(buffer + l6_offset) = (int8_t)(ret_null - l6_ip);
@@ -808,32 +640,17 @@ void DosExeEmitter::EmitSharedFunctions()
         *(buffer + l12_offset) = (int8_t)(ret_null - l12_ip);
         *(buffer + l15_offset) = (int8_t)(ret_null - l15_ip);
 
-        //   xor ax, ax
         ZeroRegister(CpuRegister::AX, 2);
 
-        // ret_ptr:
+    // ret_ptr:
         uint32_t ret_ptr = ip_dst;
         *(buffer + l17_offset) = (int8_t)(ret_ptr - l17_ip);
 
-        //   Destroy current call frame
-        uint8_t* l18 = AllocateBufferForInstruction(2);
-        l18[0] = 0x66;                          // Operand size prefix
-        l18[1] = ToOpR(0x58, CpuRegister::BP);  // pop ebp
-
-        //   retn 2
-        uint8_t* ret = AllocateBufferForInstruction(3);
-        ret[0] = 0xC2;
-        *(uint16_t*)(ret + 1) = 2;
+        AsmProcLeave(2);
     });
 
     EmitSharedFunction("release", [&]() {
-        //   Create new call frame
-        uint8_t* l1 = AllocateBufferForInstruction(2 + 3);
-        l1[0] = 0x66;                           // Operand size prefix
-        l1[1] = ToOpR(0x50, CpuRegister::BP);   // push ebp
-        l1[2] = 0x66;                           // Operand size prefix
-        l1[3] = 0x8B;                           // mov r32 (ebp), rm32 (esp)
-        l1[4] = ToXrm(3, CpuRegister::BP, CpuRegister::SP);
+        AsmProcEnter();
 
         //   mov ax, ss:[bp + 6]
         uint8_t* l2 = AllocateBufferForInstruction(3);
@@ -848,47 +665,18 @@ void DosExeEmitter::EmitSharedFunctions()
         l3[1] = ToXrm(3, 5, CpuRegister::AX);
         l3[2] = 4;
 
-        //   mov bx, ds
-        uint8_t* l5 = AllocateBufferForInstruction(2);
-        l5[0] = 0x8C;   // mov r16, sreg
-        l5[1] = ToXrm(3, CpuSegment::DS, CpuRegister::BX);
+        AsmMov(CpuRegister::BX, CpuSegment::DS);
 
-        //   add ax, bx
-        uint8_t* l6 = AllocateBufferForInstruction(2);
-        l6[0] = 0x03;  // add r16, rm16
-        l6[1] = ToXrm(3, CpuRegister::AX, CpuRegister::BX);
+        AsmAdd(CpuRegister::AX, CpuRegister::BX, 2);
 
-        //   mov es, ax
-        uint8_t* l7 = AllocateBufferForInstruction(2);
-        l7[0] = 0x8E;   // mov sreg, r16
-        l7[1] = ToXrm(3, CpuSegment::ES, CpuRegister::AX);
+        AsmMov(CpuSegment::ES, CpuRegister::AX);
 
-        // Call DOS Function Dispatcher
-        //   int 21h
-        uint8_t* l8 = AllocateBufferForInstruction(4);
-        l8[0] = 0xB4;   // mov ah, imm8
-        l8[1] = 0x49;   //  Free Allocated Memory
-        l8[2] = 0xCD;   // int imm8
-        l8[3] = 0x21;   //  DOS Function Dispatcher
+        AsmInt(0x21 /*DOS Function Dispatcher*/, 0x49 /*Free Allocated Memory*/);
 
         // Restore ES segment
-        //   mov es, bx
-        uint8_t* l9 = AllocateBufferForInstruction(2);
-        l9[0] = 0x8E;   // mov sreg, r16
-        l9[1] = ToXrm(3, CpuSegment::ES, CpuRegister::BX);
+        AsmMov(CpuSegment::ES, CpuRegister::BX);
 
-        //uint32_t end = ip_dst;
-        //*(buffer + l4_offset) = (int8_t)(ret_null - l4_ip);
-
-        //   Destroy current call frame
-        uint8_t* l10 = AllocateBufferForInstruction(2);
-        l10[0] = 0x66;                          // Operand size prefix
-        l10[1] = ToOpR(0x58, CpuRegister::BP);  // pop ebp
-
-        //   retn 2
-        uint8_t* ret = AllocateBufferForInstruction(3);
-        ret[0] = 0xC2;
-        *(uint16_t*)(ret + 1) = 2;
+        AsmProcLeave(2);
     });
 
     Log::PopIndent();
@@ -941,6 +729,9 @@ void DosExeEmitter::FixMzHeader(InstructionEntry* instruction_stream, uint32_t s
 {
     MzHeader* header = (MzHeader*)buffer;
 
+    Log::Write(LogType::Info, "Finalizing executable file...");
+    Log::PushIndent();
+
     Log::Write(LogType::Verbose, "Program size: %d bytes", ip_dst);
     Log::Write(LogType::Verbose, "Static size: %d bytes", static_size);
 
@@ -978,6 +769,8 @@ void DosExeEmitter::FixMzHeader(InstructionEntry* instruction_stream, uint32_t s
     }
 
     Log::Write(LogType::Verbose, "Entry point: 0x%04x", header->ip);
+
+    Log::PopIndent();
 }
 
 void DosExeEmitter::Save(FILE* stream)
@@ -989,8 +782,7 @@ void DosExeEmitter::Save(FILE* stream)
             CheckBackpatchListIsEmpty(DosBackpatchTarget::Static);
 
             if (!fwrite(buffer, buffer_offset, 1, stream)) {
-                // ToDo: Something went wrong...
-                Log::Write(LogType::Error, "Emitting executable file failed.");
+                Log::Write(LogType::Error, "Emitting of executable file failed.");
             }
         }
 
@@ -1122,6 +914,7 @@ DosVariableDescriptor* DosExeEmitter::FindVariableByName(char* name)
         }
     }
 
+    // Variable cannot be found
     ThrowOnUnreachableCode();
 }
 
@@ -1266,6 +1059,7 @@ void DosExeEmitter::RefreshParentEndIp(SymbolTableEntry* symbol_table)
 void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, SaveReason reason)
 {
     if (var->symbol->size > 0) {
+        // Variable is defined as pre-allocated memory, only indexed access is allowed
         ThrowOnUnreachableCode();
     }
 
@@ -1357,6 +1151,7 @@ void DosExeEmitter::SaveVariable(DosVariableDescriptor* var, SaveReason reason)
 void DosExeEmitter::SaveIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, CpuRegister reg_dst)
 {
     if (var->symbol->type.pointer == 0) {
+        // Variable is not defined as pointer, so it cannot be indexed
         ThrowOnUnreachableCode();
     }
 
@@ -1530,6 +1325,8 @@ void DosExeEmitter::MarkRegisterAsDiscarded(CpuRegister reg)
     while (it != variables.end()) {
         if (it->reg == reg && (!it->symbol->parent || (it->symbol->parent && strcmp(it->symbol->parent, parent->name) == 0))) {
             if (it->is_dirty) {
+                // This should not happen, register owned by variable is discarded,
+                // but variable was not written back to stack yet
                 ThrowOnUnreachableCode();
             }
 
@@ -1553,21 +1350,19 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, int32_t para
             case 2: {
                 // Push register to parameter stack
                 uint8_t* a = AllocateBufferForInstruction(1);
-                a[0] = ToOpR(0x50, reg);        // push r16
+                a[0] = ToOpR(0x50, reg);    // push r16
                 break;
             }
             case 4: {
                 // Push register to parameter stack
                 uint8_t* a = AllocateBufferForInstruction(2);
-                a[0] = 0x66;                    // Operand size prefix
-                a[1] = ToOpR(0x50, reg);        // push r32
+                a[0] = 0x66;                // Operand size prefix
+                a[1] = ToOpR(0x50, reg);    // push r32
                 break;
             }
 
             default: ThrowOnUnreachableCode();
         }
-
-        return;
     } else if (var->reg != CpuRegister::None) {
         // Variable is already in register
         switch (param_size) {
@@ -1595,88 +1390,75 @@ void DosExeEmitter::PushVariableToStack(DosVariableDescriptor* var, int32_t para
 
             default: ThrowOnUnreachableCode();
         }
-
-        return;
-    }
-
-    switch (param_size) {
-        case 1: {
-            // ToDo: Use movzx
-            if (!var->symbol->parent) {
-                // Static push using register (16-bit range)
+    } else {
+        // Variable is in memory
+        switch (param_size) {
+            case 1: {
                 CpuRegister reg_temp = GetUnusedRegister();
 
-                uint8_t* a = AllocateBufferForInstruction(2 + 2 + 2 + 1);
-                // Zero high/upper part of temp. register,
-                // because we have to push to stack full 16-bit word
-                a[0] = 0x32;                    // xor r8, rm8
-                a[1] = ToXrm(3, (uint8_t)reg_temp + 4, (uint8_t)reg_temp + 4);
+                if (!var->symbol->parent) {
+                    // Static push using register (16-bit range)
+                    uint8_t* a1 = AllocateBufferForInstruction(3 + 2);
+                    a1[0] = 0x0F;
+                    a1[1] = 0xB6;   // movzx r16, rm8 (i386+)
+                    a1[2] = ToXrm(0, reg_temp, 6);
 
-                a[2] = 0x8A;                    // mov r8, rm8
-                a[3] = ToXrm(0, reg_temp, 6);
+                    BackpatchStatic(a1 + 3, var);
+                } else {
+                    // Stack push using register (8-bit range)
+                    uint8_t* a1 = AllocateBufferForInstruction(3 + 1);
+                    a1[0] = 0x0F;
+                    a1[1] = 0xB6;   // movzx r16, rm8 (i386+)
+                    a1[2] = ToXrm(1, reg_temp, 6);
 
-                BackpatchLocal(a + 2, var);
+                    BackpatchLocal(a1 + 3, var);
+                }
 
-                a[6] = ToOpR(0x50, reg_temp);   // push r16
-            } else {
-                // Stack push using register (8-bit range)
-                CpuRegister reg_temp = GetUnusedRegister();
-
-                uint8_t* a = AllocateBufferForInstruction(2 + 2 + 1 + 1);
-                // Zero high/upper part of temp. register,
-                // because we have to push to stack full 16-bit word
-                a[0] = 0x32;                    // xor r8, rm8
-                a[1] = ToXrm(3, (uint8_t)reg_temp + 4, (uint8_t)reg_temp + 4);
-
-                a[2] = 0x8A;                    // mov r8, rm8
-                a[3] = ToXrm(1, reg_temp, 6);
-
-                BackpatchLocal(a + 4, var);
-
-                a[5] = ToOpR(0x50, reg_temp);   // push r16
+                uint8_t* a2 = AllocateBufferForInstruction(1);
+                a2[0] = ToOpR(0x50, reg_temp);  // push r16
+                break;
             }
-            break;
-        }
-        case 2: {
-            if (!var->symbol->parent) {
-                // Static push (16-bit range)
-                uint8_t* a = AllocateBufferForInstruction(2 + 2);
-                a[0] = 0xFF;                    // push rm16
-                a[1] = ToXrm(0, 6, 6);
+            case 2: {
+                if (!var->symbol->parent) {
+                    // Static push (16-bit range)
+                    uint8_t* a = AllocateBufferForInstruction(2 + 2);
+                    a[0] = 0xFF;                // push rm16
+                    a[1] = ToXrm(0, 6, 6);
 
-                BackpatchStatic(a + 2, var);
-            } else {
-                // Stack push (8-bit range)
-                uint8_t* a = AllocateBufferForInstruction(2 + 1);
-                a[0] = 0xFF;                    // push rm16
-                a[1] = ToXrm(1, 6, 6);
+                    BackpatchStatic(a + 2, var);
+                } else {
+                    // Stack push (8-bit range)
+                    uint8_t* a = AllocateBufferForInstruction(2 + 1);
+                    a[0] = 0xFF;                // push rm16
+                    a[1] = ToXrm(1, 6, 6);
 
-                BackpatchLocal(a + 2, var);
+                    BackpatchLocal(a + 2, var);
+                }
+                break;
             }
-            break;
-        }
-        case 4: {
-            if (!var->symbol->parent) {
-                // Static push (16-bit range)
-                uint8_t* a = AllocateBufferForInstruction(3 + 2);
-                a[0] = 0x66;                    // Operand size prefix
-                a[1] = 0xFF;                    // push rm32
-                a[2] = ToXrm(0, 6, 6);
+            case 4: {
+                if (!var->symbol->parent) {
+                    // Static push (16-bit range)
+                    uint8_t* a = AllocateBufferForInstruction(3 + 2);
+                    a[0] = 0x66;                // Operand size prefix
+                    a[1] = 0xFF;                // push rm32
+                    a[2] = ToXrm(0, 6, 6);
 
-                BackpatchStatic(a + 3, var);
-            } else {
-                // Stack push (8-bit range)
-                uint8_t* a = AllocateBufferForInstruction(3 + 1);
-                a[0] = 0x66;                    // Operand size prefix
-                a[1] = 0xFF;                    // push rm32
-                a[2] = ToXrm(1, 6, 6);
+                    BackpatchStatic(a + 3, var);
+                } else {
+                    // Stack push (8-bit range)
+                    uint8_t* a = AllocateBufferForInstruction(3 + 1);
+                    a[0] = 0x66;                // Operand size prefix
+                    a[1] = 0xFF;                // push rm32
+                    a[2] = ToXrm(1, 6, 6);
 
-                BackpatchLocal(a + 3, var);
+                    BackpatchLocal(a + 3, var);
+                }
+                break;
             }
-            break;
-        }
 
-        default: ThrowOnUnreachableCode();
+            default: ThrowOnUnreachableCode();
+        }
     }
 }
 
@@ -2447,17 +2229,9 @@ void DosExeEmitter::EmitEntryPointPrologue(SymbolTableEntry* function)
     parent = function;
 
     // Prepare for startup
-    uint8_t* l1 = AllocateBufferForInstruction(2);
-    l1[0] = 0x8C;    // mov rm16, sreg
-    l1[1] = ToXrm(3, CpuSegment::DS, CpuRegister::AX);
-
-    uint8_t* l2 = AllocateBufferForInstruction(2);
-    l2[0] = 0x8E;    // mov sreg, rm16
-    l2[1] = ToXrm(3, CpuSegment::SS, CpuRegister::AX);
-
-    uint8_t* l3 = AllocateBufferForInstruction(2);
-    l3[0] = 0x8E;    // mov sreg, rm16
-    l3[1] = ToXrm(3, CpuSegment::ES, CpuRegister::AX);
+    AsmMov(CpuRegister::AX, CpuSegment::DS);
+    AsmMov(CpuSegment::SS, CpuRegister::AX);
+    AsmMov(CpuSegment::ES, CpuRegister::AX);
 
     // Create new call frame
     uint8_t* l4 = AllocateBufferForInstruction(3);
@@ -2486,12 +2260,7 @@ void DosExeEmitter::EmitFunctionPrologue(SymbolTableEntry* function, SymbolTable
     functions.push_back({ function->name, ip_dst });
 
     // Create new call frame
-    uint8_t* a = AllocateBufferForInstruction(2 + 3);
-    a[0] = 0x66;                            // Operand size prefix
-    a[1] = ToOpR(0x50, CpuRegister::BP);    // push ebp
-    a[2] = 0x66;                            // Operand size prefix
-    a[3] = 0x8B;                            // mov r32 (ebp), rm32 (esp)
-    a[4] = ToXrm(3, CpuRegister::BP, CpuRegister::SP);
+    AsmProcEnter();
 
     // Allocate space for local variables in stack
     int32_t stack_param_size = 0;
@@ -2516,7 +2285,7 @@ void DosExeEmitter::EmitFunctionPrologue(SymbolTableEntry* function, SymbolTable
         ++it;
     }
 
-    a = AllocateBufferForInstruction(2 + 2);
+    uint8_t* a = AllocateBufferForInstruction(2 + 2);
     a[0] = 0x81;    // sub rm32 (esp), imm32 <size>
     a[1] = ToXrm(3, 5, CpuRegister::SP);
 
@@ -4398,13 +4167,9 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
             case ExpressionType::Constant: {
                 uint8_t imm8 = atoi(i->return_statement.op.value);
 
-                uint8_t* a = AllocateBufferForInstruction(6);
+                uint8_t* a = AllocateBufferForInstruction(2);
                 a[0] = 0xB0;    // mov al, imm8
                 a[1] = imm8;    //  Return code
-                a[2] = 0xB4;    // mov ah, imm8
-                a[3] = 0x4C;    //  Terminate Process With Return Code
-                a[4] = 0xCD;    // int imm8
-                a[5] = 0x21;    //  DOS Function Dispatcher
                 break;
             }
             case ExpressionType::Variable: {
@@ -4432,17 +4197,13 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
 
                     BackpatchLocal(a + 2, src);
                 }
-
-                uint8_t* a = AllocateBufferForInstruction(4);
-                a[0] = 0xB4;    // mov ah, imm8
-                a[1] = 0x4C;    //  Terminate Process With Return Code
-                a[2] = 0xCD;    // int imm8
-                a[3] = 0x21;    //  DOS Function Dispatcher
                 break;
             }
 
             default: ThrowOnUnreachableCode();
         }
+
+        AsmInt(0x21 /*DOS Function Dispatcher*/, 0x4C /*Terminate Process With Return Code*/);
     } else {
         // Standard function with "stdcall" calling convention,
         // return value (if any) is saved in AX register
@@ -4466,13 +4227,6 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
         }
 
         // Destroy current call frame
-        uint8_t* a = AllocateBufferForInstruction(3 + 2);
-        a[0] = 0x66;                            // Operand size prefix
-        a[1] = 0x8B;                            // mov r32 (esp), rm32 (ebp)
-        a[2] = ToXrm(3, CpuRegister::SP, CpuRegister::BP);
-        a[3] = 0x66;                            // Operand size prefix
-        a[4] = ToOpR(0x58, CpuRegister::BP);    // pop ebp
-
         if (parent->parameter > 0) {
             // Compute needed space in stack for parameters, 
             // so stack region with parameters can be released
@@ -4491,12 +4245,9 @@ void DosExeEmitter::EmitReturn(InstructionEntry* i, SymbolTableEntry* symbol_tab
                 param_decl = param_decl->next;
             }
 
-            uint8_t* a = AllocateBufferForInstruction(3);
-            a[0] = 0xC2;    // retn imm16
-            *(uint16_t*)(a + 1) = stack_param_size;
+            AsmProcLeave(stack_param_size, true);
         } else {
-            uint8_t* a = AllocateBufferForInstruction(1);
-            a[0] = 0xC3;    // retn
+            AsmProcLeave(0);
         }
     }
 }
@@ -4555,35 +4306,4 @@ void DosExeEmitter::EmitSharedFunction(char* name, std::function<void()> emitter
     }
 
     ThrowOnUnreachableCode();
-}
-
-uint8_t* DosExeEmitter::AllocateBuffer(uint32_t size)
-{
-    if (!buffer) {
-        buffer_size = size + 256;
-        buffer = (uint8_t*)malloc(buffer_size);
-        buffer_offset = size;
-        return buffer;
-    }
-
-    if (buffer_size < buffer_offset + size) {
-        buffer_size = buffer_offset + size + 64;
-        buffer = (uint8_t*)realloc(buffer, buffer_size);
-    }
-
-    uint32_t prev_offset = buffer_offset;
-    buffer_offset += size;
-    return buffer + prev_offset;
-}
-
-uint8_t* DosExeEmitter::AllocateBufferForInstruction(uint32_t size)
-{
-    ip_dst += size;
-    return AllocateBuffer(size);
-}
-
-template<typename T>
-T* DosExeEmitter::AllocateBuffer()
-{
-    return reinterpret_cast<T*>(AllocateBuffer(sizeof(T)));
 }

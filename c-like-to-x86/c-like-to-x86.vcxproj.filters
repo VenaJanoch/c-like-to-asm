@@ -13,21 +13,27 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Hlavičkové soubory\Emitters">
+      <UniqueIdentifier>{fc6973a3-21b2-429f-b1b9-9ec6367beb4b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zdrojové soubory\Emitters">
+      <UniqueIdentifier>{7f45e667-ff24-452d-bdaf-d077affe1b1c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zdrojové soubory\Generated">
+      <UniqueIdentifier>{a063eba6-1524-415b-b8f6-26bb67a4d592}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Hlavičkové soubory\Generated">
+      <UniqueIdentifier>{b076087e-7ab9-49f8-9406-5174d5a54c42}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="targetver.h">
-      <Filter>Hlavičkové soubory</Filter>
-    </ClInclude>
-    <ClInclude Include="parser.tab.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
     <ClInclude Include="Compiler.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
     <ClInclude Include="CompilerException.h">
-      <Filter>Hlavičkové soubory</Filter>
-    </ClInclude>
-    <ClInclude Include="DosExeEmitter.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
     <ClInclude Include="SymbolTableEntry.h">
@@ -51,18 +57,21 @@
     <ClInclude Include="SuppressRegister.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
+    <ClInclude Include="DosExeEmitter.h">
+      <Filter>Hlavičkové soubory\Emitters</Filter>
+    </ClInclude>
+    <ClInclude Include="GenericEmitter.h">
+      <Filter>Hlavičkové soubory\Emitters</Filter>
+    </ClInclude>
+    <ClInclude Include="i386Emitter.h">
+      <Filter>Hlavičkové soubory\Emitters</Filter>
+    </ClInclude>
+    <ClInclude Include="parser.tab.h">
+      <Filter>Hlavičkové soubory\Generated</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="parser.tab.cpp">
-      <Filter>Zdrojové soubory</Filter>
-    </ClCompile>
-    <ClCompile Include="lexer.flex.cpp">
-      <Filter>Zdrojové soubory</Filter>
-    </ClCompile>
     <ClCompile Include="Compiler.cpp">
-      <Filter>Zdrojové soubory</Filter>
-    </ClCompile>
-    <ClCompile Include="DosExeEmitter.cpp">
       <Filter>Zdrojové soubory</Filter>
     </ClCompile>
     <ClCompile Include="Log.cpp">
@@ -73,6 +82,21 @@
     </ClCompile>
     <ClCompile Include="Main.cpp">
       <Filter>Zdrojové soubory</Filter>
+    </ClCompile>
+    <ClCompile Include="DosExeEmitter.cpp">
+      <Filter>Zdrojové soubory\Emitters</Filter>
+    </ClCompile>
+    <ClCompile Include="GenericEmitter.cpp">
+      <Filter>Zdrojové soubory\Emitters</Filter>
+    </ClCompile>
+    <ClCompile Include="i386Emitter.cpp">
+      <Filter>Zdrojové soubory\Emitters</Filter>
+    </ClCompile>
+    <ClCompile Include="lexer.flex.cpp">
+      <Filter>Zdrojové soubory\Generated</Filter>
+    </ClCompile>
+    <ClCompile Include="parser.tab.cpp">
+      <Filter>Zdrojové soubory\Generated</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

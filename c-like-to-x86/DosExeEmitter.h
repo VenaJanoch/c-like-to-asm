@@ -13,6 +13,7 @@
 #include "Compiler.h"
 #include "InstructionEntry.h"
 #include "SymbolTableEntry.h"
+#include "i386Emitter.h"
 
 enum struct DosBackpatchType {
     Unknown,
@@ -43,37 +44,6 @@ struct DosBackpatchInstruction {
 
     int32_t ip_src;
     char* value;
-};
-
-enum struct CpuRegister {
-    None = 0xFF,
-
-    AL = 0,
-    CL = 1,
-    DL = 2,
-    BL = 3,
-    AH = 4,
-    CH = 5,
-    DH = 6,
-    BH = 7,
-
-    AX = 0,
-    CX = 1,
-    DX = 2,
-    BX = 3,
-    SP = 4,
-    BP = 5,
-    SI = 6,
-    DI = 7
-};
-
-enum struct CpuSegment {
-    ES = 0,
-    CS = 1,
-    SS = 2,
-    DS = 3,
-    FS = 4,
-    GS = 5
 };
 
 struct DosVariableDescriptor {
@@ -129,12 +99,6 @@ struct MzRelocEntry {
 #pragma pack(pop)
 
 // Defines to shorten the code
-#define ToOpR(op, r)  \
-    (uint8_t)(op + ((uint8_t)(r) & 0x07))
-
-#define ToXrm(x, r, m)  \
-    (uint8_t)((((uint8_t)(x) << 6) & 0xC0) | (((uint8_t)(r) << 3) & 0x38) | ((uint8_t)(m) & 0x07))
-
 #define BackpatchLocal(ptr, var)                                    \
     {                                                               \
         if (!(var)->location) {                                     \
@@ -163,7 +127,10 @@ struct MzRelocEntry {
         });                                                         \
     }
 
-class DosExeEmitter
+/// <summary>
+/// Class that emits 16-bit EXE executable for DOS (i386)
+/// </summary>
+class DosExeEmitter : i386Emitter
 {
     friend class SuppressRegister;
 
@@ -351,19 +318,12 @@ private:
 
     void EmitSharedFunction(char* name, std::function<void()> emitter);
 
-    // Output buffer management
-    uint8_t* AllocateBuffer(uint32_t size);
-    uint8_t* AllocateBufferForInstruction(uint32_t size);
-
-    template<typename T>
-    T* AllocateBuffer();
 
     const int32_t NearJumpThreshold = 10;
 
     Compiler* compiler;
 
     int32_t ip_src = 0;
-    int32_t ip_dst = 0;
 
     int32_t static_size = 0;
 
@@ -381,8 +341,4 @@ private:
     uint32_t parent_stack_offset = 0;
     InstructionEntry* current_instruction = nullptr;
     bool was_return = false;
-
-    uint8_t* buffer = nullptr;
-    uint32_t buffer_offset = 0;
-    uint32_t buffer_size = 0;
 };
