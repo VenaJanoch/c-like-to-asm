@@ -5,10 +5,10 @@
 class SuppressRegister
 {
 public:
-    SuppressRegister(DosExeEmitter* emitter, CpuRegister reg);
+    SuppressRegister(DosExeEmitter* emitter, i386::CpuRegister reg);
     ~SuppressRegister();
 
 private:
     DosExeEmitter* emitter;
-    CpuRegister reg;
+    i386::CpuRegister reg;
 };

@@ -51,7 +51,7 @@ struct DosVariableDescriptor {
 
     char* value;
 
-    CpuRegister reg;
+    i386::CpuRegister reg;
     int32_t location;
 
     uint32_t last_used;
@@ -130,7 +130,7 @@ struct MzRelocEntry {
 /// <summary>
 /// Class that emits 16-bit EXE executable for DOS (i386)
 /// </summary>
-class DosExeEmitter : i386Emitter
+class DosExeEmitter : i386::Emitter
 {
     friend class SuppressRegister;
 
@@ -147,6 +147,10 @@ public:
     void Save(FILE* stream);
 
 private:
+    /// <summary>
+    /// Add all variables from symbol table to internal list
+    /// </summary>
+    /// <param name="symbol_table">Symbol table</param>
     void CreateVariableList(SymbolTableEntry* symbol_table);
 
     /// <summary>
@@ -154,14 +158,14 @@ private:
     /// save and unreference least used register
     /// </summary>
     /// <returns>Unused register</returns>
-    CpuRegister GetUnusedRegister();
+    i386::CpuRegister GetUnusedRegister();
 
     /// <summary>
     /// Return unused/free register, if all registers are referenced,
     /// no register will be returned (None)
     /// </summary>
     /// <returns>Unused register; or None</returns>
-    CpuRegister TryGetUnusedRegister();
+    i386::CpuRegister TryGetUnusedRegister();
     
     /// <summary>
     /// Find variable specified by name in variable list
@@ -192,14 +196,20 @@ private:
     /// <param name="reason">Save reason</param>
     void SaveVariable(DosVariableDescriptor* var, SaveReason reason);
 
-    void SaveIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, CpuRegister reg_dst);
+    /// <summary>
+    /// Save value of register to destination specified by variable and index
+    /// </summary>
+    /// <param name="var">Variable descriptor</param>
+    /// <param name="index">Index descriptor</param>
+    /// <param name="reg_dst">Register with value</param>
+    void SaveIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, i386::CpuRegister reg_dst);
 
     /// <summary>
     /// Save variable which uses specified register and unreference it
     /// </summary>
     /// <param name="reg">Register to unreference</param>
     /// <param name="reason">Save reason</param>
-    void SaveAndUnloadRegister(CpuRegister reg, SaveReason reason);
+    void SaveAndUnloadRegister(i386::CpuRegister reg, SaveReason reason);
 
     /// <summary>
     /// Save all unsaved variables to stack and unreference all registers
@@ -212,7 +222,7 @@ private:
     /// If the variable is unsaved, compiler exception is thrown
     /// </summary>
     /// <param name="reg">Discarded register</param>
-    void MarkRegisterAsDiscarded(CpuRegister reg);
+    void MarkRegisterAsDiscarded(i386::CpuRegister reg);
 
     /// <summary>
     /// Push value of variable to parameter stack 
@@ -228,27 +238,39 @@ private:
     /// <param name="var">Variable to copy</param>
     /// <param name="desired_size">Target size</param>
     /// <returns>Target register</returns>
-    CpuRegister LoadVariableUnreferenced(DosVariableDescriptor* var, int32_t desired_size);
-
-    CpuRegister LoadVariablePointer(DosVariableDescriptor* var, bool force_reference);
-
-    CpuRegister LoadIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size);
+    i386::CpuRegister LoadVariableUnreferenced(DosVariableDescriptor* var, int32_t desired_size);
 
     /// <summary>
-    /// Force copy value of variable to specified register,
-    /// it does not change ownership of any register
+    /// Load pointer of variable to any register
+    /// </summary>
+    /// <param name="var">Variable descriptor</param>
+    /// <param name="force_reference">If true, load address of pointer to pointer</param>
+    /// <returns>Target register</returns>
+    i386::CpuRegister LoadVariablePointer(DosVariableDescriptor* var, bool force_reference);
+
+    /// <summary>
+    /// Load value of variable and index to any register
+    /// </summary>
+    /// <param name="var">Variable descriptor</param>
+    /// <param name="index">Index descriptor</param>
+    /// <param name="desired_size">Target size</param>
+    /// <returns>Target register</returns>
+    i386::CpuRegister LoadIndexedVariable(DosVariableDescriptor* var, InstructionOperandIndex& index, int32_t desired_size);
+
+    /// <summary>
+    /// Force copy value of variable to specified register
     /// </summary>
     /// <param name="var">Variable to copy</param>
     /// <param name="reg_dst">Target register</param>
     /// <param name="desired_size">Target size</param>
-    void CopyVariableToRegister(DosVariableDescriptor* var, CpuRegister reg_dst, int32_t desired_size);
+    void CopyVariableToRegister(DosVariableDescriptor* var, i386::CpuRegister reg_dst, int32_t desired_size);
 
     /// <summary>
     /// Load constant value to specified register with smallest possible size
     /// </summary>
     /// <param name="value">Constant value</param>
     /// <param name="reg">Target register</param>
-    void LoadConstantToRegister(int32_t value, CpuRegister reg);
+    void LoadConstantToRegister(int32_t value, i386::CpuRegister reg);
 
     /// <summary>
     /// Load constant value to specified register with specified size
@@ -256,21 +278,45 @@ private:
     /// <param name="value">Constant value</param>
     /// <param name="reg">Target register</param>
     /// <param name="desired_size">Specified size</param>
-    void LoadConstantToRegister(int32_t value, CpuRegister reg, int32_t desired_size);
+    void LoadConstantToRegister(int32_t value, i386::CpuRegister reg, int32_t desired_size);
 
     /// <summary>
     /// Fill specified register with zeros
     /// </summary>
     /// <param name="reg">Register</param>
     /// <param name="desired_size">Size of register</param>
-    void ZeroRegister(CpuRegister reg, int32_t desired_size);
+    void ZeroRegister(i386::CpuRegister reg, int32_t desired_size);
 
     // Backpatching
+    /// <summary>
+    /// Backpatch all entries in list with address of current line
+    /// </summary>
     void BackpatchAddresses();
+
+    /// <summary>
+    /// Backpatch all entries in list with address of newly created label
+    /// </summary>
+    /// <param name="label">New label</param>
+    /// <param name="target">Type of entries</param>
     void BackpatchLabels(const DosLabel& label, DosBackpatchTarget target);
+
+    /// <summary>
+    /// Check if there is no unresolved entries in backpatch list
+    /// </summary>
+    /// <param name="target">Type of entries</param>
     void CheckBackpatchListIsEmpty(DosBackpatchTarget target);
+
+    /// <summary>
+    /// Check if the last statement of function is return,
+    /// so the function is terminated properly.
+    /// If it's void function, return is emitted automatically.
+    /// </summary>
     void CheckReturnStatementPresent();
 
+    /// <summary>
+    /// Process all events that are connected to symbol table entries
+    /// </summary>
+    /// <param name="symbol_table">Symbol table</param>
     void ProcessSymbolLinkage(SymbolTableEntry* symbol_table);
 
     // Instruction emitters
@@ -316,10 +362,19 @@ private:
     /// <returns></returns>
     bool IfConstexpr(CompareType type, int32_t op1, int32_t op2);
 
+    /// <summary>
+    /// Emit shared function if it's referenced in source code
+    /// </summary>
+    /// <param name="name">Name of function</param>
+    /// <param name="emitter">Callback to emit instructions</param>
     void EmitSharedFunction(char* name, std::function<void()> emitter);
 
 
+    /// <summary>
+    /// Max. number of abstract instructions that can fit into "rel8" address
+    /// </summary>
     const int32_t NearJumpThreshold = 10;
+
 
     Compiler* compiler;
 
@@ -334,7 +389,7 @@ private:
     std::list<DosLabel> labels;
     std::unordered_set<char*> strings;
 
-    std::unordered_set<CpuRegister> suppressed_registers;
+    std::unordered_set<i386::CpuRegister> suppressed_registers;
     
     SymbolTableEntry* parent = nullptr;
     int32_t parent_end_ip = 0;

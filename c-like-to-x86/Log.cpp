@@ -124,6 +124,7 @@ namespace Log {
     void Write(LogType type, std::string line)
     {
         if (line.empty()) {
+            std::cout << "\r\n";
             return;
         }
 

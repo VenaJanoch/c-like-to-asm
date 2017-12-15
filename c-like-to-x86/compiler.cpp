@@ -87,6 +87,7 @@ int Compiler::OnRun(int argc, wchar_t* argv[])
         if (input_filename) {
             Log::Write(LogType::Info, "Parsing source code...");
         } else {
+            Log::Write(LogType::Info, "");
             Log::Write(LogType::Info, "Compiling application in interactive mode (press CTRL-Z to compile):");
         }
         Log::PushIndent();
@@ -114,7 +115,7 @@ int Compiler::OnRun(int argc, wchar_t* argv[])
         Log::Write(LogType::Info, "Creating executable file...");
         Log::PushIndent();
 
-#if _DEBUG
+#if defined(DEBUG_OUTPUT)
         CreateDebugOutput();
 #endif
 
@@ -186,7 +187,7 @@ int Compiler::OnRun(int argc, wchar_t* argv[])
     return EXIT_SUCCESS;
 }
 
-#if _DEBUG
+#if defined(DEBUG_OUTPUT)
 void Compiler::CreateDebugOutput()
 {
     FILE* output_debug;

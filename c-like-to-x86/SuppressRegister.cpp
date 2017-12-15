@@ -1,6 +1,6 @@
 #include "SuppressRegister.h"
 
-SuppressRegister::SuppressRegister(DosExeEmitter* emitter, CpuRegister reg)
+SuppressRegister::SuppressRegister(DosExeEmitter* emitter, i386::CpuRegister reg)
     : emitter(emitter),
       reg(reg)
 {

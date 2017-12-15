@@ -12,6 +12,9 @@
 #include "CompilerException.h"
 #include "SuppressRegister.h"
 
+// This emitter is using i386 architecture
+using namespace i386;
+
 DosExeEmitter::DosExeEmitter(Compiler* compiler)
     : compiler(compiler)
 {

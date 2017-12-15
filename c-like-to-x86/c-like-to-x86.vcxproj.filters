@@ -54,9 +54,6 @@
     <ClInclude Include="TinyFormat.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
-    <ClInclude Include="SuppressRegister.h">
-      <Filter>Hlavičkové soubory</Filter>
-    </ClInclude>
     <ClInclude Include="DosExeEmitter.h">
       <Filter>Hlavičkové soubory\Emitters</Filter>
     </ClInclude>
@@ -69,15 +66,15 @@
     <ClInclude Include="parser.tab.h">
       <Filter>Hlavičkové soubory\Generated</Filter>
     </ClInclude>
+    <ClInclude Include="SuppressRegister.h">
+      <Filter>Hlavičkové soubory\Emitters</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Compiler.cpp">
       <Filter>Zdrojové soubory</Filter>
     </ClCompile>
     <ClCompile Include="Log.cpp">
-      <Filter>Zdrojové soubory</Filter>
-    </ClCompile>
-    <ClCompile Include="SuppressRegister.cpp">
       <Filter>Zdrojové soubory</Filter>
     </ClCompile>
     <ClCompile Include="Main.cpp">
@@ -97,6 +94,9 @@
     </ClCompile>
     <ClCompile Include="parser.tab.cpp">
       <Filter>Zdrojové soubory\Generated</Filter>
+    </ClCompile>
+    <ClCompile Include="SuppressRegister.cpp">
+      <Filter>Zdrojové soubory\Emitters</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

@@ -12,6 +12,11 @@
 #include "SymbolTableEntry.h"
 #include "ScopeType.h"
 
+// Debug output is created when it is compiled in Debug configuration
+#if _DEBUG
+#   define DEBUG_OUTPUT
+#endif
+
 
 /// <summary>
 /// Name of the function that represents application entry point
@@ -283,7 +288,7 @@ public:
 
     int OnRun(int argc, wchar_t* argv[]);
 
-#if _DEBUG
+#if defined(DEBUG_OUTPUT)
     void CreateDebugOutput();
 #endif
 
@@ -316,6 +321,11 @@ public:
     /// <returns>Symbol entry</returns>
     SymbolTableEntry* FindSymbolByName(const char* name);
 
+    /// <summary>
+    /// Find abstract instruction by its IP (instruction pointer)
+    /// </summary>
+    /// <param name="ip">Instruction pointer</param>
+    /// <returns>Instruction</returns>
     InstructionEntry* FindInstructionByIp(int32_t ip);
 
     bool CanImplicitCast(SymbolType to, SymbolType from, ExpressionType type);
@@ -328,10 +338,25 @@ public:
     /// <returns>Instruction pointer</returns>
     int32_t NextIp();
 
+    /// <summary>
+    /// Generate new (temporary) variable with specified type and add it to symbol table
+    /// </summary>
+    /// <param name="type">Type of variable</param>
+    /// <returns>New symbol</returns>
     SymbolTableEntry* GetUnusedVariable(SymbolType type);
 
+    /// <summary>
+    /// Get size of type in bytes
+    /// </summary>
+    /// <param name="type">Type of variable</param>
+    /// <returns>Size in bytes</returns>
     int32_t GetSymbolTypeSize(SymbolType type);
 
+    /// <summary>
+    /// Convert size (1, 2, 4, ...) to shift operand
+    /// </summary>
+    /// <param name="size">Size</param>
+    /// <returns>Shift operand</returns>
     int8_t SizeToShift(int32_t size);
 
     void IncreaseScope(ScopeType type);
@@ -351,6 +376,9 @@ private:
     void ReleaseDeclarationQueue();
     void ReleaseAll();
 
+    /// <summary>
+    /// Perform specific actions when the parsing is completed
+    /// </summary>
     void PostprocessSymbolTable();
 
     /// <summary>
