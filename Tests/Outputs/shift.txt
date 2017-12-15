@@ -1,0 +1,18 @@
+Zadejte cislo pro posunuti
+60
+Cislo je posunute o 1 bitu do prava >> 30
+Cislo je posunute o 1 bitu do leva << 120
+Cislo je posunute o 2 bitu do prava >> 15
+Cislo je posunute o 2 bitu do leva << 240
+Cislo je posunute o 3 bitu do prava >> 7
+Cislo je posunute o 3 bitu do leva << 480
+Cislo je posunute o 4 bitu do prava >> 3
+Cislo je posunute o 4 bitu do leva << 960
+Cislo je posunute o 5 bitu do prava >> 1
+Cislo je posunute o 5 bitu do leva << 1920
+Cislo je posunute o 6 bitu do prava >> 0
+Cislo je posunute o 6 bitu do leva << 3840
+Cislo je posunute o 7 bitu do prava >> 0
+Cislo je posunute o 7 bitu do leva << 7680
+Cislo je posunute o 8 bitu do prava >> 0
+Cislo je posunute o 8 bitu do leva << 15360

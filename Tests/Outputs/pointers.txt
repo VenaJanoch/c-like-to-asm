@@ -1,0 +1,21 @@
+Zadejte cislo z intervalu <0,1000> pro serazeni 
+Pro ukonceni zadavani zadejte cislo vetsi nez 1000 
+12
+Zadejte cislo z intervalu <0,1000> pro serazeni 
+Pro ukonceni zadavani zadejte cislo vetsi nez 1000 
+332
+Zadejte cislo z intervalu <0,1000> pro serazeni 
+Pro ukonceni zadavani zadejte cislo vetsi nez 1000 
+4
+Zadejte cislo z intervalu <0,1000> pro serazeni 
+Pro ukonceni zadavani zadejte cislo vetsi nez 1000 
+33
+Zadejte cislo z intervalu <0,1000> pro serazeni 
+Pro ukonceni zadavani zadejte cislo vetsi nez 1000 
+54
+Zadejte cislo z intervalu <0,1000> pro serazeni 
+Pro ukonceni zadavani zadejte cislo vetsi nez 1000 
+2222
+------------------------------------
+Pocet prvku: 5
+4, 12, 33, 54, 332, 

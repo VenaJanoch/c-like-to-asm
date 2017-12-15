@@ -1,0 +1,10 @@
+Zadejte prvni cislo
+12
+Zadejte druhe cislo
+3
+Zadejte cislo operace: 
+1 -> +; 2 -> -
+3 -> /; 4 -> *
+5 -> %; 6 -> ^
+1
+Vysledek je: 15

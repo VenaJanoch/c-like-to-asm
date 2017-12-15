@@ -1,0 +1,3 @@
+Enter a three digit integer:
+155
+155 is not an Armstrong number.

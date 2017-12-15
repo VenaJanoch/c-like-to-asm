@@ -7,16 +7,15 @@ uint8 Main() {
 	uint32 temp;
 	uint32 result = 0;
 
-	PrintString("Enter a three digit integer: $");
+	PrintString("Enter a three digit integer:");
 	PrintNewLine();
 
 	number = ReadUint32();
-	PrintString(" while $");
+	PrintNewLine();
 	originalNumber = number;
 
 	while (originalNumber != 0)
 	{
-		PrintString(" while $");
 		remainder = originalNumber % 10;
 		temp = remainder * remainder * remainder;
 		result =  result + temp;
@@ -25,13 +24,12 @@ uint8 Main() {
 
 	if (result == number){
 		PrintUint32(number);
-		PrintString(" is an Armstrong number.$");
-		PrintNewLine();
-	}
-	else{
+		PrintString(" is an Armstrong number.");
+		
+	}else{
 		PrintUint32(number);
-		PrintString(" is not an Armstrong number.$");
-		PrintNewLine();
+		PrintString(" is not an Armstrong number.");
+		
 	}
 	return 0;
 }

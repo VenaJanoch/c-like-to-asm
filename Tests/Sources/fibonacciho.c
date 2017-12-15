@@ -4,28 +4,29 @@ uint32 Fib2(uint32 to);
 
 uint8 Main() {
 
-	/** fafdas fdaf fda */
-
-    string s1 = "Testovani naseho prekladace!$";
+	/** Ukazka funkcnosti naseho prekladace */
+	
+    string s1 = "Testovani naseho prekladace!";
     PrintString(s1);
     PrintNewLine();
     
-    PrintString("Napiste cislo (radsi od 1 do 20): $");
+    PrintString("Napiste cislo (radsi od 1 do 20): ");
     
 	uint32 input = ReadUint32();	 
-	 PrintNewLine();
+	PrintNewLine();
 		
-    PrintString("Vase cislo: $");
+    PrintString("Vase cislo: ");
     PrintUint32(input);
     PrintNewLine();
     
     PrintNewLine();
     PrintNewLine();
-    PrintString("Fibonacciho posloupnost prvnich $");
+    PrintString("Fibonacciho posloupnost prvnich ");
     PrintUint32(input);
-    PrintString(" cisel:$");
+    PrintString(" cisel:");
     PrintNewLine();
 	
+	// Cyklus for pro opakovane zavolani funkce pro vypocet fibonaciho posloupnosti
 	for (uint8 i = 0; i < input; ++i) {
         uint32 res = Fib2(i);
         PrintUint32(res);
@@ -34,6 +35,7 @@ uint8 Main() {
 	
 	return 0;
 }
+
 
 uint32 Fib1(uint32 index) {
     if (index == 0) {return 0;}

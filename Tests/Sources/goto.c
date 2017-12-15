@@ -10,8 +10,6 @@ uint8 Main()
 		}
 	}
 
-	PrintString("Nevimddd");
-
 addition:
 	PrintString("Suma: ");
 	PrintUint32(sum);

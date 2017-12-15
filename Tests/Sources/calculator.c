@@ -48,7 +48,7 @@ uint8 Main() {
 	case 6: vysledek = power(number1,number2);
 		break;
 
-	default: PrintString("Hovno");
+	default: PrintString("Spatna operace");
 	}
 	PrintString("Vysledek je: ");
 	PrintUint32(vysledek);

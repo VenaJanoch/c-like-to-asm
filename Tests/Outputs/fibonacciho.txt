@@ -1,0 +1,21 @@
+Testovani naseho prekladace!
+Napiste cislo (radsi od 1 do 20): 15
+Vase cislo: 15
+
+
+Fibonacciho posloupnost prvnich 15 cisel:
+0
+1
+1
+2
+3
+5
+8
+13
+21
+34
+55
+89
+144
+233
+377

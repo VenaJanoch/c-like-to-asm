@@ -20,5 +20,58 @@
         <Output>do_while.txt</Output>
     </Test>
 
+  <Test>
+    <Source>goto.c</Source>
+    <Output>goto.txt</Output>
+  </Test>
+  <!--
+  <Test>
+    <Source>string.c</Source>
+    <Args>Pes</Args>
+    <Output>string.txt</Output>
+  </Test>
+ -->
+
+  <Test>
+    <Source>armstrong_number.c</Source>
+    <Input>armstrong_number.txt</Input>
+    <Output>armstrong_number.txt</Output>
+  </Test>
+
+  <Test>
+    <Source>calculator.c</Source>
+    <Input>calculator.txt</Input>
+    <Output>calculator.txt</Output>
+  </Test>
   
+
+  <Test>
+    <Source>fibonacciho.c</Source>
+    <Input>fibonacciho.txt</Input>
+    <Output>fibonacciho.txt</Output>
+  </Test>
+  
+  <Test>
+    <Source>operatory_konstanty.c</Source>
+    <Output>operatory_konstanty.txt</Output>
+  </Test>
+
+  <Test>
+    <Source>pointers.c</Source>
+    <Input>pointers.txt</Input>
+    <Output>pointers.txt</Output>
+  </Test>
+
+  <Test>
+    <Source>pole.c</Source>
+    <Input>pole.txt</Input>
+    <Output>pole.txt</Output>
+  </Test>
+
+  <Test>
+    <Source>shift.c</Source>
+    <Input>shift.txt</Input>
+    <Output>shift.txt</Output>
+  </Test>
+
 </Tests>

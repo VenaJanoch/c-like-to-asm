@@ -1,5 +1,4 @@
 uint8 Main()
-
 {
 	uint32 number;
 	uint32 sum = 0;

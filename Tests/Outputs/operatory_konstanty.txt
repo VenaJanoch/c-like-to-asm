@@ -1,0 +1,6 @@
+hodnota1 != hodnota2
+hodnota1 < hodnota2
+hodnota1 <= hodnota2
+hodnota1 je 1 AND hodnota2 je 2
+hodnota1 je 1 OR hodnota2 je 1
+Spravne bylo vyhodnoceno 5 podminek 

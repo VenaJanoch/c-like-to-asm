@@ -32,7 +32,6 @@ uint32 vytiskni_pole(uint32 velikost, uint32* pole) {
 		PrintString(", ");
 	}
 
-	PrintNewLine();
 	return 0;
 }
 

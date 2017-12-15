@@ -11,18 +11,18 @@ uint8 Main()
 
 	uint32 size;
 
-	PrintString("Enter the size of an array");
-	PrintNewLine();
+	PrintString("Enter the size of an array\r\n");
 	size = ReadUint32();
+	PrintNewLine();
 
 	for (i = 0; i < size; ++i) {
 		array[i] = i * 4;
 	}
 
 
-	PrintString("Enter the key for searching");
-	PrintNewLine();
+	PrintString("Enter the key for searching\r\n");
 	key = ReadUint32();
+	PrintNewLine();
 
 	/*  search begins */
 
@@ -35,7 +35,7 @@ uint8 Main()
 
 		if (key == array[mid]) {
 
-			PrintString("SUCCESSFUL SEARCH $");
+			PrintString("SUCCESSFUL SEARCH ");
 			PrintUint32(key);
 			PrintNewLine();
 
@@ -52,7 +52,7 @@ uint8 Main()
 
 	}
 
-		PrintString("UNSUCCESSFUL SEARCH $");
+		PrintString("UNSUCCESSFUL SEARCH ");
 		PrintUint32(key);
 
 return 0;

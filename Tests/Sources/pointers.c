@@ -34,7 +34,7 @@ uint8 Main(){
 			++counter;
 	}
 		
-		PrintString("------------------------------------ \r \n");
+		PrintString("------------------------------------\r\n");
 		PrintString("Pocet prvku: ");
 		PrintUint32(counter);
 		PrintNewLine();
